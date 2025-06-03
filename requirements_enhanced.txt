@@ -11,6 +11,7 @@ psycopg2-binary>=2.9.7
 
 # Sentiment analysis (VADER fallback)
 vaderSentiment>=3.3.2
+nltk>=3.8.1
 
 # HTTP client for failsafe LLM communication
 aiohttp>=3.9.0

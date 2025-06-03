@@ -13,3 +13,11 @@ class ModelBatchRequest(BaseModel):
 
 class ModelDownloadRequest(BaseModel):
     model: str = Field(...)
+
+class HealthResponse(BaseModel):
+    status: str
+    service: str
+    model_manager_available: bool
+    loaded_models: List[str]
+    memory_info: Dict[str, Any]
+    timestamp: str

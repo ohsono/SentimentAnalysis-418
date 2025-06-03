@@ -75,12 +75,13 @@ services:
   model-service-api:
     build:
       context: .
-      dockerfile: Dockerfile.model-service
+      dockerfile: Dockerfile.model-service-distilbert
     container_name: ucla_model_service
     environment:
       - HOST=0.0.0.0
       - PORT=8081
-      - PRELOAD_MODEL=distilbert-base-uncased-finetuned-sst-2-english
+      - MODEL_CACHE_DIR=/app/models
+      - PRELOAD_MODEL=distilbert-sentiment
     volumes:
       - model_cache:/app/models
       - ./logs:/app/logs

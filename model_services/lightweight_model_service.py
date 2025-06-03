@@ -16,7 +16,7 @@ import time
 import uvicorn
 import asyncio
 from .pydantic_models import ModelPredictionRequest, ModelBatchRequest
-from .pydantic_models import ModelDownloadRequest, ModelDownloadRequest
+from .pydantic_models import ModelDownloadRequest, HealthResponse
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

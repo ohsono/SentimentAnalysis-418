@@ -26,6 +26,9 @@ COPY requirements_enhanced.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements_enhanced.txt
 
+# Download NLTK data
+RUN python -c "import nltk; nltk.download('vader_lexicon', quiet=True); nltk.download('punkt', quiet=True)"
+
 # Create necessary directories
 RUN mkdir -p /app/worker/data /app/worker/logs
 
