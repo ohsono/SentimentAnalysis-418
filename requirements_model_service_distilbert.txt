@@ -1,0 +1,28 @@
+# Model Service Requirements - Minimal DistilBERT Setup
+# Optimized for lightweight sentiment analysis
+
+# Core dependencies
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+pydantic==2.5.0
+
+# Machine Learning - Lightweight
+torch==2.1.0+cpu --index-url https://download.pytorch.org/whl/cpu
+transformers==4.35.2
+tokenizers==0.15.0
+
+# Text processing
+numpy==1.24.3
+scipy==1.11.4
+
+# Utilities
+python-multipart==0.0.6
+requests==2.31.0
+aiofiles==23.2.1
+
+# Monitoring
+psutil==5.9.6
+
+# Optional: ONNX for even faster inference (uncomment if needed)
+# onnxruntime==1.16.3
+# optimum==1.14.1

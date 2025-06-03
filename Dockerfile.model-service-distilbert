@@ -1,0 +1,68 @@
+FROM python:3.11-slim
+
+LABEL maintainer="ohsono@gmail.com"
+LABEL description="DistilBERT Model Service API - Lightweight LLM"
+LABEL version="1.0.0"
+
+WORKDIR /app
+
+# Set environment variables
+ENV PYTHONPATH=/app
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV MODEL_CACHE_DIR=/app/models
+ENV PRELOAD_MODEL=distilbert-sentiment
+
+# Install system dependencies for ML
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        gcc \
+        g++ \
+        curl \
+        wget && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# Copy requirements first for better caching
+COPY requirements_model_service_distilbert.txt .
+
+# Install Python dependencies
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements_model_service_distilbert.txt
+
+# Pre-download DistilBERT model to speed up startup
+RUN python -c "
+from transformers import pipeline, AutoTokenizer, AutoModelForSequenceClassification
+import os
+print('Pre-downloading DistilBERT model...')
+cache_dir = '/app/models/distilbert-sentiment'
+os.makedirs(cache_dir, exist_ok=True)
+# Download the default sentiment analysis model
+pipeline('sentiment-analysis', 
+         model='distilbert-base-uncased-finetuned-sst-2-english',
+         cache_dir=cache_dir,
+         return_all_scores=True)
+print('DistilBERT model pre-downloaded successfully!')
+"
+
+# Create necessary directories
+RUN mkdir -p /app/models /app/logs
+
+# Copy only the necessary application code
+COPY model_services/ ./model_services/
+
+# Create non-root user
+RUN groupadd -r model_user && useradd -r -g model_user model_user && \
+    chown -R model_user:model_user /app
+
+USER model_user
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 \
+    CMD curl -f http://localhost:8081/health || exit 1
+
+# Expose port
+EXPOSE 8081
+
+# Run the DistilBERT service
+CMD ["uvicorn", "model_services.distilbert_service:app", "--host", "0.0.0.0", "--port", "8081"]
