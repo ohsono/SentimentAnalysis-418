@@ -1,0 +1,53 @@
+# Lightweight Dockerfile for UCLA Sentiment Analysis API
+# Models downloaded at runtime, not included in image
+
+FROM python:3.11-slim
+
+LABEL maintainer="ohsono@gmail.com"
+LABEL description="Lightweight sentiment analysis API without embedded models"
+
+# Set working directory
+WORKDIR /app
+
+# Set environment variables
+ENV PYTHONPATH=/app
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+
+# Install system dependencies (minimal)
+RUN apt-get update --allow-releaseinfo-change \
+    && apt-get install -y --no-install-recommends \
+        curl \
+        ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
+# Copy requirements first for better caching
+COPY requirements_docker.txt .
+
+# Install Python dependencies
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir -r requirements_docker.txt
+
+# Create app structure
+RUN mkdir -p /app/models /app/logs /app/app/api /app/app/ml
+
+# Copy application code
+COPY app/ /app/app/
+COPY *.py /app/
+
+# Create non-root user for security
+RUN groupadd -r appuser && useradd -r -g appuser appuser \
+    && chown -R appuser:appuser /app
+
+USER appuser
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:8080/health || exit 1
+
+# Expose port
+EXPOSE 8080
+
+# Run the application
+CMD ["python", "-m", "uvicorn", "app.api.main:app", "--host", "0.0.0.0", "--port", "8080"]

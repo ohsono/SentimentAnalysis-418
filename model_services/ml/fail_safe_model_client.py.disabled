@@ -1,0 +1,302 @@
+#!/usr/bin/env python3
+
+"""
+Enhanced Model Service Client with Fail-Safe Features
+Implements circuit breaker pattern and VADER fallback
+"""
+
+import os
+import logging
+import requests
+import time
+from typing import Dict, Any, List, Optional
+from datetime import datetime, timezone
+from enum import Enum
+
+try:
+    from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer as VaderAnalyzer
+    VADER_AVAILABLE = True
+except ImportError:
+    VADER_AVAILABLE = False
+
+logger = logging.getLogger(__name__)
+
+class ServiceState(Enum):
+    HEALTHY = "healthy"
+    DEGRADED = "degraded" 
+    FAILED = "failed"
+
+class FailSafeModelClient:
+    """
+    Model service client with circuit breaker and VADER fallback
+    Automatically switches to VADER after 3 consecutive failures
+    """
+    
+    def __init__(self, model_service_url: str = None):
+        self.model_service_url = model_service_url or os.getenv(
+            "MODEL_SERVICE_URL", 
+            "http://localhost:8081"
+        )
+        self.timeout = int(os.getenv("MODEL_SERVICE_TIMEOUT", "30"))
+        self.max_failures = int(os.getenv("MODEL_SERVICE_MAX_FAILURES", "3"))
+        
+        # Circuit breaker state
+        self.failure_count = 0
+        self.last_failure_time = None
+        self.service_state = ServiceState.HEALTHY
+        self.circuit_breaker_timeout = 300  # 5 minutes
+        
+        # VADER analyzer for fallback
+        self.vader_analyzer = VaderAnalyzer() if VADER_AVAILABLE else None
+        
+        # Track service status
+        self._last_health_check = 0
+        self._health_check_interval = 60
+        
+        logger.info(f"FailSafe Model Client initialized: {self.model_service_url}")
+        logger.info(f"VADER fallback available: {VADER_AVAILABLE}")
+    
+    def _update_failure_state(self, failed: bool = True):
+        """Update the failure tracking state"""
+        if failed:
+            self.failure_count += 1
+            self.last_failure_time = time.time()
+            
+            if self.failure_count >= self.max_failures:
+                self.service_state = ServiceState.FAILED
+                logger.warning(f"Model service marked as FAILED after {self.failure_count} failures")
+            elif self.failure_count >= 2:
+                self.service_state = ServiceState.DEGRADED
+                logger.warning(f"Model service marked as DEGRADED after {self.failure_count} failures")
+        else:
+            # Success - reset failure count
+            if self.failure_count > 0:
+                logger.info(f"Model service recovered after {self.failure_count} failures")
+            self.failure_count = 0
+            self.last_failure_time = None
+            self.service_state = ServiceState.HEALTHY
+    
+    def _should_try_service(self) -> bool:
+        """Determine if we should try the model service"""
+        if self.service_state == ServiceState.HEALTHY:
+            return True
+        elif self.service_state == ServiceState.DEGRADED:
+            return True  # Still try but expect more failures
+        elif self.service_state == ServiceState.FAILED:
+            # Check if circuit breaker timeout has passed
+            if self.last_failure_time and time.time() - self.last_failure_time > self.circuit_breaker_timeout:
+                logger.info("Circuit breaker timeout passed, trying model service again")
+                self.service_state = ServiceState.DEGRADED
+                return True
+            return False
+        return False
+    
+    def _vader_fallback(self, text: str) -> Dict[str, Any]:
+        """VADER sentiment analysis fallback"""
+        if not VADER_AVAILABLE:
+            return self._simple_fallback(text, "VADER not available")
+        
+        start_time = time.time()
+        
+        try:
+            scores = self.vader_analyzer.polarity_scores(text)
+            processing_time = (time.time() - start_time) * 1000
+            
+            # Map VADER compound score to sentiment label
+            compound = scores['compound']
+            if compound >= 0.05:
+                sentiment = 'positive'
+                confidence = min(0.7 + abs(compound) * 0.3, 0.95)
+            elif compound <= -0.05:
+                sentiment = 'negative'
+                confidence = min(0.7 + abs(compound) * 0.3, 0.95)
+            else:
+                sentiment = 'neutral'
+                confidence = 0.6 + (0.4 * (1 - abs(compound)))
+            
+            return {
+                'text': text[:100] + '...' if len(text) > 100 else text,
+                'sentiment': sentiment,
+                'confidence': round(confidence, 3),
+                'compound_score': round(compound, 3),
+                'probabilities': {
+                    'positive': round(scores['pos'], 3),
+                    'negative': round(scores['neg'], 3),
+                    'neutral': round(scores['neu'], 3)
+                },
+                'processing_time_ms': round(processing_time, 2),
+                'model_used': 'vader',
+                'model_name': 'VADER Sentiment Analyzer',
+                'source': 'vader-fallback',
+                'fallback_reason': f'Model service failed ({self.failure_count} failures)',
+                'timestamp': datetime.now(timezone.utc).isoformat()
+            }
+            
+        except Exception as e:
+            logger.error(f"VADER fallback failed: {e}")
+            return self._simple_fallback(text, f"VADER error: {e}")
+    
+    def _simple_fallback(self, text: str, reason: str) -> Dict[str, Any]:
+        """Simple rule-based fallback if VADER is unavailable"""
+        return {
+            'text': text[:100] + '...' if len(text) > 100 else text,
+            'sentiment': 'neutral',
+            'confidence': 0.5,
+            'compound_score': 0.0,
+            'probabilities': {'positive': 0.33, 'neutral': 0.34, 'negative': 0.33},
+            'processing_time_ms': 1.0,
+            'model_used': 'simple-fallback',
+            'model_name': 'Simple rule-based classifier',
+            'source': 'simple-fallback',
+            'fallback_reason': reason,
+            'note': 'Using simple fallback (both model service and VADER unavailable)',
+            'timestamp': datetime.now(timezone.utc).isoformat()
+        }
+    
+    def predict_sentiment(self, text: str, model: str = "distilbert-sentiment", 
+                         include_probabilities: bool = True) -> Dict[str, Any]:
+        """
+        Predict sentiment with fail-safe fallback to VADER
+        """
+        # Check if we should try the model service
+        if not self._should_try_service():
+            logger.info("Using VADER fallback due to circuit breaker")
+            return self._vader_fallback(text)
+        
+        try:
+            response = requests.post(
+                f"{self.model_service_url}/predict",
+                json={
+                    "text": text,
+                    "model": model,
+                    "include_probabilities": include_probabilities
+                },
+                timeout=self.timeout
+            )
+            
+            if response.status_code == 200:
+                result = response.json()
+                result['source'] = 'model-service'
+                result['service_state'] = self.service_state.value
+                self._update_failure_state(failed=False)  # Success
+                return result
+            else:
+                logger.error(f"Model service error: {response.status_code}")
+                self._update_failure_state(failed=True)
+                
+        except requests.exceptions.Timeout:
+            logger.warning("Model service timeout")
+            self._update_failure_state(failed=True)
+        except requests.exceptions.ConnectionError:
+            logger.warning("Model service connection error")
+            self._update_failure_state(failed=True)
+        except Exception as e:
+            logger.error(f"Model service request failed: {e}")
+            self._update_failure_state(failed=True)
+        
+        # If we reach here, the service call failed
+        logger.info("Model service failed, using VADER fallback")
+        return self._vader_fallback(text)
+    
+    def predict_batch(self, texts: List[str], model: str = "distilbert-sentiment",
+                     include_probabilities: bool = True) -> Dict[str, Any]:
+        """Batch predict with fail-safe fallback"""
+        if not self._should_try_service():
+            logger.info("Using VADER fallback for batch due to circuit breaker")
+            return self._vader_batch_fallback(texts)
+        
+        try:
+            response = requests.post(
+                f"{self.model_service_url}/predict/batch",
+                json={
+                    "texts": texts,
+                    "model": model,
+                    "include_probabilities": include_probabilities
+                },
+                timeout=self.timeout * 2
+            )
+            
+            if response.status_code == 200:
+                result = response.json()
+                result['source'] = 'model-service'
+                self._update_failure_state(failed=False)
+                return result
+            else:
+                logger.error(f"Model service batch error: {response.status_code}")
+                self._update_failure_state(failed=True)
+                
+        except Exception as e:
+            logger.error(f"Model service batch request failed: {e}")
+            self._update_failure_state(failed=True)
+        
+        return self._vader_batch_fallback(texts)
+    
+    def _vader_batch_fallback(self, texts: List[str]) -> Dict[str, Any]:
+        """VADER batch fallback"""
+        start_time = time.time()
+        results = []
+        
+        for i, text in enumerate(texts):
+            result = self._vader_fallback(text)
+            result['batch_index'] = i
+            results.append(result)
+        
+        total_time = (time.time() - start_time) * 1000
+        sentiments = [r['sentiment'] for r in results]
+        
+        return {
+            "results": results,
+            "summary": {
+                "total_processed": len(results),
+                "successful": len(results),
+                "failed": 0,
+                "total_processing_time_ms": round(total_time, 2),
+                "average_time_per_text_ms": round(total_time / len(texts), 2),
+                "method": "vader-fallback",
+                "fallback_reason": f"Model service unavailable ({self.failure_count} failures)",
+                "sentiment_distribution": {
+                    "positive": sentiments.count('positive'),
+                    "negative": sentiments.count('negative'),
+                    "neutral": sentiments.count('neutral')
+                }
+            },
+            "source": "vader-fallback",
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+    
+    def get_service_status(self) -> Dict[str, Any]:
+        """Get detailed service status including circuit breaker state"""
+        try:
+            response = requests.get(f"{self.model_service_url}/health", timeout=5)
+            service_available = response.status_code == 200
+            service_data = response.json() if service_available else {}
+        except:
+            service_available = False
+            service_data = {}
+        
+        return {
+            "model_service": {
+                "available": service_available,
+                "url": self.model_service_url,
+                "state": self.service_state.value,
+                "failure_count": self.failure_count,
+                "last_failure": self.last_failure_time,
+                "circuit_breaker_active": self.service_state == ServiceState.FAILED,
+                "data": service_data
+            },
+            "fallback": {
+                "vader_available": VADER_AVAILABLE,
+                "fallback_active": not self._should_try_service()
+            },
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+    
+    def reset_circuit_breaker(self):
+        """Manually reset the circuit breaker"""
+        logger.info("Manually resetting circuit breaker")
+        self.failure_count = 0
+        self.last_failure_time = None
+        self.service_state = ServiceState.HEALTHY
+
+# Global fail-safe model client
+fail_safe_model_client = FailSafeModelClient()

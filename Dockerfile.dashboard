@@ -1,0 +1,64 @@
+FROM python:3.11-slim
+
+LABEL maintainer="ohsono@gmail.com"
+LABEL description="Sentiment Analysis Dashboard"
+LABEL version="1.0.0"
+
+WORKDIR /app
+
+# Set environment variables
+ENV PYTHONPATH=/app
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+# Set Streamlit home directory to a writable location
+ENV STREAMLIT_HOME_PATH=/tmp/streamlit
+ENV STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
+
+# Install minimal system dependencies
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        gcc \
+        g++ && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# Copy only the requirements
+COPY requirements_enhanced.txt .
+
+# Install Python dependencies
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements_enhanced.txt && \
+    pip install --no-cache-dir streamlit plotly redis
+
+# Create necessary directories and ensure they're writable
+RUN mkdir -p /tmp/streamlit /app/logs && \
+    chmod -R 777 /tmp/streamlit /app/logs
+
+# Copy only the necessary application code
+COPY app/dashboard/ ./app/dashboard/
+COPY app/utils/ ./app/utils/
+COPY app/database/ ./app/database/
+
+# Create entrypoint script that ensures proper permissions
+RUN echo '#!/bin/bash\n\
+mkdir -p /tmp/streamlit\n\
+chmod 777 /tmp/streamlit\n\
+cd /app\n\
+export HOME=/tmp\n\
+export STREAMLIT_HOME_PATH=/tmp/streamlit\n\
+export STREAMLIT_BROWSER_GATHER_USAGE_STATS=false\n\
+streamlit run app/dashboard/main.py --server.port=8501 --server.address=0.0.0.0 --browser.serverAddress=localhost --server.enableCORS=false\n\
+' > /app/entrypoint.sh && \
+    chmod +x /app/entrypoint.sh
+
+# Create non-root user with tmp as home directory
+RUN groupadd -r dashboard_user && useradd -r -g dashboard_user -d /tmp dashboard_user && \
+    chown -R dashboard_user:dashboard_user /app /tmp/streamlit /tmp
+
+USER dashboard_user
+
+# Expose port
+EXPOSE 8501
+
+# Run the dashboard
+CMD ["/app/entrypoint.sh"]

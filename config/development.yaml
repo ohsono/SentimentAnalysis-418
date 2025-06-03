@@ -1,0 +1,18 @@
+# Development configuration
+database:
+  url: "postgresql://postgres:password@localhost:5432/sentiment_analytics"
+  
+reddit:
+  subreddit: "UCLA"
+  post_limit: 100
+  comment_limit: 50
+
+ml:
+  model_name: "distilbert-base-uncased"
+  batch_size: 8
+  
+alerts:
+  email:
+    enabled: false
+  slack:
+    enabled: false

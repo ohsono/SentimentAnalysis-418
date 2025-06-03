@@ -1,0 +1,31 @@
+# Minimal Model Service Dependencies
+# Lightweight version with only essential packages
+
+# Core web framework
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+pydantic>=2.4.0
+
+# Essential ML libraries
+torch>=2.0.0,<2.2.0
+transformers>=4.35.0
+tokenizers>=0.14.0
+# Note: torchaudio commented out - only needed for audio models
+# torchaudio>=2.0.0
+
+# Hugging Face essentials
+huggingface-hub>=0.17.0
+
+# Scientific computing
+numpy>=1.24.0
+
+# HTTP client for health checks
+httpx>=0.25.0
+
+# Utilities
+python-dotenv>=1.0.0
+
+# Performance monitoring
+psutil>=5.9.0
+
+nltk

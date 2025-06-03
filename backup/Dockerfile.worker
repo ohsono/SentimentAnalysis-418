@@ -1,0 +1,64 @@
+# Dockerfile for Background Worker Service
+# Handles async data processing and background tasks
+
+FROM python:3.11-slim
+
+LABEL maintainer="ohsono@gmail.com"
+LABEL description="Background worker for async data processing"
+LABEL version="1.0.0"
+
+# Set working directory
+WORKDIR /app
+
+# Set environment variables
+ENV PYTHONPATH=/app
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+
+# Install system dependencies with proper GPG handling
+RUN apt-get clean && \
+    rm -rf /var/lib/apt/lists/* && \
+    apt-get update --allow-releaseinfo-change && \
+    apt-get install -y --no-install-recommends \
+        ca-certificates \
+        gnupg2 && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends \
+        gcc \
+        g++ \
+        libpq-dev && \
+    rm -rf /var/lib/apt/lists/* && \
+    apt-get clean
+
+# Copy requirements
+COPY requirements_enhanced.txt .
+
+# Install Python dependencies
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir -r requirements_enhanced.txt
+
+# Create directories
+RUN mkdir -p /app/logs /app/app
+
+# Copy application code
+COPY app/ /app/app/
+
+# Copy worker scripts
+COPY scripts/worker-entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/worker-entrypoint.sh
+
+# Create non-root user
+RUN groupadd -r worker && useradd -r -g worker worker \
+    && chown -R worker:worker /app
+
+USER worker
+
+# Health check for worker
+HEALTHCHECK --interval=60s --timeout=10s --start-period=30s --retries=3 \
+    CMD python -c "import redis; r=redis.Redis(host='redis', port=6379, password='sentiment_redis_2024'); r.ping()" || exit 1
+
+# Use entrypoint for proper initialization
+ENTRYPOINT ["/usr/local/bin/worker-entrypoint.sh"]
+
+# Run celery worker
+CMD ["python", "-m", "celery", "worker", "-A", "app.workers.celery_app", "--loglevel=info", "--concurrency=2"]

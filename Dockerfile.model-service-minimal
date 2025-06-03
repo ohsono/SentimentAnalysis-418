@@ -1,0 +1,68 @@
+# Minimal Dockerfile for Model Service
+# Lightweight version with only essential ML packages
+
+FROM python:3.11-slim
+
+LABEL maintainer="ohsono@gmail.com"
+LABEL description="Minimal model service for ML inference"
+LABEL version="1.0.0-minimal"
+
+# Set working directory
+WORKDIR /app
+
+# Set environment variables
+ENV PYTHONPATH=/app
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV MODEL_SERVICE_MODE=true
+ENV HF_HOME=/app/models
+ENV TRANSFORMERS_CACHE=/app/models
+
+# Install minimal system dependencies
+RUN apt-get clean && \
+    rm -rf /var/lib/apt/lists/* && \
+    apt-get update --allow-releaseinfo-change && \
+    apt-get install -y --no-install-recommends \
+        ca-certificates \
+        gnupg2 && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends \
+        gcc \
+        g++ && \
+    rm -rf /var/lib/apt/lists/* && \
+    apt-get clean
+
+# Copy minimal requirements
+COPY requirements_model_service_minimal.txt .
+
+# Install minimal ML dependencies
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir -r requirements_model_service_minimal.txt
+
+# Create directories
+RUN mkdir -p /app/models /app/logs /app/app/ml
+
+# Copy model service code
+COPY app/ml/ /app/app/ml/
+COPY model_services/lightweight_model_service.py /app/
+
+# Create non-root user
+RUN groupadd -r modeluser && useradd -r -g modeluser modeluser \
+    && chown -R modeluser:modeluser /app
+
+USER modeluser
+
+# Health check
+HEALTHCHECK --interval=45s --timeout=15s --start-period=180s --retries=3 \
+    CMD python -c "import requests; r=requests.get('http://localhost:8081/health', timeout=10); exit(0 if r.status_code==200 else 1)" || exit 1
+
+# Expose port
+EXPOSE 8081
+
+# Environment variables for model service
+ENV PRELOAD_MODEL=distilbert-sentiment
+ENV OMP_NUM_THREADS=2
+ENV MKL_NUM_THREADS=2
+
+# Run the lightweight model service
+CMD ["python", "lightweight_model_service.py"]

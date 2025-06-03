@@ -1,0 +1,100 @@
+services:
+  # Minimal development setup - Core services only
+  
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: ucla-sentiment-postgres-dev
+    environment:
+      POSTGRES_DB: ucla_sentiment_dev
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: dev_password_123
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+    networks:
+      - sentiment-dev
+    restart: unless-stopped
+
+  # Redis for caching
+  redis:
+    image: redis:7-alpine
+    container_name: ucla-sentiment-redis-dev
+    command: redis-server --requirepass dev_redis_123
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_dev_data:/data
+    networks:
+      - sentiment-dev
+    restart: unless-stopped
+
+  # API Service with minimal model service
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api-enhanced
+    container_name: ucla-sentiment-api-dev
+    ports:
+      - "8888:8888"
+    environment:
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=ucla_sentiment_dev
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=dev_password_123
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=dev_redis_123
+      - MODEL_SERVICE_URL=http://model-service:8081
+      - API_HOST=0.0.0.0
+      - API_PORT=8888
+      - ENV=development
+      - PYTHONPATH=/app
+    volumes:
+      - ./logs:/app/logs
+      - ./config:/app/config
+      - ./app:/app/app  # Live code reload for development
+    depends_on:
+      - postgres
+      - redis
+      - model-service
+    networks:
+      - sentiment-dev
+    restart: unless-stopped
+
+  # Minimal Model Service
+  model-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.model-service-minimal
+    container_name: ucla-sentiment-model-dev
+    ports:
+      - "8081:8081"
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8081
+      - PRELOAD_MODEL=distilbert-sentiment
+      - HF_HOME=/app/models
+      - PYTHONPATH=/app
+    volumes:
+      - model_dev_cache:/app/models
+      - ./logs:/app/logs
+    networks:
+      - sentiment-dev
+    restart: unless-stopped
+
+# Development volumes
+volumes:
+  postgres_dev_data:
+    driver: local
+  redis_dev_data:
+    driver: local
+  model_dev_cache:
+    driver: local
+
+# Development network
+networks:
+  sentiment-dev:
+    driver: bridge

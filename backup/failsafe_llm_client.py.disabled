@@ -1,0 +1,336 @@
+#!/usr/bin/env python3
+
+"""
+Failsafe LLM Client with Circuit Breaker Pattern
+Handles automatic fallback to VADER when LLM service fails
+"""
+
+import asyncio
+import aiohttp
+import time
+import logging
+from typing import Dict, Any, Optional
+from datetime import datetime, timezone
+from enum import Enum
+
+logger = logging.getLogger(__name__)
+
+# Import SimpleSentimentAnalyzer at the top with fallback
+try:
+    # Try relative import first (when running as module)
+    from .simple_sentiment_analyzer import SimpleSentimentAnalyzer
+except ImportError:
+    # Fallback to direct import (when running directly)
+    from simple_sentiment_analyzer import SimpleSentimentAnalyzer
+
+
+class CircuitBreakerState(Enum):
+    CLOSED = "closed"  # Normal operation
+    OPEN = "open"      # Circuit breaker tripped, not trying LLM
+    HALF_OPEN = "half_open"  # Testing if LLM service recovered
+
+class FailsafeLLMClient:
+    """
+    Failsafe LLM client with circuit breaker pattern and automatic VADER fallback
+    
+    Features:
+    - Circuit breaker pattern to prevent cascading failures
+    - Automatic fallback to VADER after N failures
+    - Success rate tracking
+    - Health monitoring and recommendations
+    """
+    
+    def __init__(self):
+        self.model_service_url = "http://model-service:8081"  # Docker internal URL
+        self.max_failures = 3
+        self.failure_window = 300  # 5 minutes
+        self.circuit_breaker_timeout = 60  # 1 minute before trying again
+        
+        # Circuit breaker state
+        self.circuit_state = CircuitBreakerState.CLOSED
+        self.failure_count = 0
+        self.consecutive_failures = 0
+        self.last_failure_time = None
+        self.circuit_opened_time = None
+        
+        # Metrics
+        self.total_requests = 0
+        self.successful_requests = 0
+        self.failed_requests = 0
+        self.fallback_requests = 0
+        
+        # Failure tracking
+        self.failure_history = []
+        
+        # HTTP session
+        self.session = None
+        
+        # VADER fallback
+        from .simple_sentiment_analyzer import SimpleSentimentAnalyzer
+        self.vader_analyzer = SimpleSentimentAnalyzer()
+    
+    async def initialize(self):
+        """Initialize the failsafe LLM client"""
+        self.session = aiohttp.ClientSession(
+            timeout=aiohttp.ClientTimeout(total=30),
+            connector=aiohttp.TCPConnector(limit=10)
+        )
+        logger.info("Failsafe LLM client initialized")
+    
+    async def close(self):
+        """Close the client and cleanup resources"""
+        if self.session:
+            await self.session.close()
+        logger.info("Failsafe LLM client closed")
+    
+    def _should_attempt_llm(self) -> bool:
+        """Determine if we should attempt to call the LLM service"""
+        current_time = time.time()
+        
+        # If circuit breaker is open, check if we should try again
+        if self.circuit_state == CircuitBreakerState.OPEN:
+            if current_time - self.circuit_opened_time > self.circuit_breaker_timeout:
+                self.circuit_state = CircuitBreakerState.HALF_OPEN
+                logger.info("Circuit breaker moving to HALF_OPEN state")
+                return True
+            return False
+        
+        # If we have too many recent failures, don't try
+        recent_failures = [
+            f for f in self.failure_history 
+            if current_time - f < self.failure_window
+        ]
+        
+        if len(recent_failures) >= self.max_failures:
+            self._open_circuit_breaker()
+            return False
+        
+        return True
+    
+    def _open_circuit_breaker(self):
+        """Open the circuit breaker"""
+        self.circuit_state = CircuitBreakerState.OPEN
+        self.circuit_opened_time = time.time()
+        logger.warning("Circuit breaker OPENED - too many LLM service failures")
+    
+    def _close_circuit_breaker(self):
+        """Close the circuit breaker after successful request"""
+        if self.circuit_state != CircuitBreakerState.CLOSED:
+            self.circuit_state = CircuitBreakerState.CLOSED
+            self.consecutive_failures = 0
+            logger.info("Circuit breaker CLOSED - LLM service recovered")
+    
+    def _record_success(self):
+        """Record a successful LLM request"""
+        self.total_requests += 1
+        self.successful_requests += 1
+        self.consecutive_failures = 0
+        self._close_circuit_breaker()
+    
+    def _record_failure(self, error: Exception):
+        """Record a failed LLM request"""
+        self.total_requests += 1
+        self.failed_requests += 1
+        self.consecutive_failures += 1
+        
+        current_time = time.time()
+        self.failure_history.append(current_time)
+        self.last_failure_time = current_time
+        
+        # Keep only recent failures
+        self.failure_history = [
+            f for f in self.failure_history 
+            if current_time - f < self.failure_window
+        ]
+        
+        logger.warning(f"LLM service failure #{self.consecutive_failures}: {error}")
+        
+        # Check if we should open circuit breaker
+        if self.consecutive_failures >= self.max_failures:
+            self._open_circuit_breaker()
+    
+    def _record_fallback(self):
+        """Record a fallback to VADER"""
+        self.fallback_requests += 1
+        logger.info("Using VADER fallback")
+    
+    async def _call_llm_service(self, text: str, model: str = "distilbert-sentiment") -> Dict[str, Any]:
+        """Call the LLM service"""
+        if not self.session:
+            raise Exception("Client not initialized")
+        
+        url = f"{self.model_service_url}/predict"
+        payload = {
+            "text": text,
+            "model": model,
+            "include_probabilities": True
+        }
+        
+        async with self.session.post(url, json=payload) as response:
+            if response.status != 200:
+                error_text = await response.text()
+                raise Exception(f"LLM service error {response.status}: {error_text}")
+            
+            result = await response.json()
+            return result
+    
+    async def predict_sentiment(self, text: str, model: str = "distilbert-sentiment") -> Dict[str, Any]:
+        """
+        Predict sentiment with failsafe fallback to VADER
+        
+        Returns sentiment analysis result with source information
+        """
+        # Check if we should attempt LLM service
+        if self._should_attempt_llm():
+            try:
+                # Try LLM service
+                result = await self._call_llm_service(text, model)
+                self._record_success()
+                
+                # Add metadata
+                result['model_used'] = model
+                result['model_name'] = f"LLM-{model}"
+                result['source'] = 'llm-service'
+                result['failsafe_used'] = False
+                
+                return result
+                
+            except Exception as e:
+                self._record_failure(e)
+                
+                # If circuit breaker is half-open and we failed, open it again
+                if self.circuit_state == CircuitBreakerState.HALF_OPEN:
+                    self._open_circuit_breaker()
+        
+        # Fallback to VADER
+        self._record_fallback()
+        result = self.vader_analyzer.analyze(text)
+        
+        # Add metadata to match LLM service format
+        result['model_used'] = 'vader'
+        result['model_name'] = 'VADER (Valence Aware Dictionary and sEntiment Reasoner)'
+        result['source'] = 'vader-fallback'
+        result['failsafe_used'] = True
+        result['circuit_breaker_state'] = self.circuit_state.value
+        
+        return result
+    
+    async def health_check(self) -> Dict[str, Any]:
+        """Check the health of the LLM service"""
+        try:
+            if not self.session:
+                return {"status": "error", "message": "Client not initialized"}
+            
+            url = f"{self.model_service_url}/health"
+            async with self.session.get(url) as response:
+                if response.status == 200:
+                    return {"status": "healthy", "service": "available"}
+                else:
+                    return {"status": "unhealthy", "service": "error", "code": response.status}
+        except Exception as e:
+            return {"status": "unhealthy", "service": "unreachable", "error": str(e)}
+    
+    def get_status(self) -> str:
+        """Get current status of the failsafe system"""
+        if self.circuit_state == CircuitBreakerState.OPEN:
+            return "circuit_breaker_open"
+        elif self.circuit_state == CircuitBreakerState.HALF_OPEN:
+            return "circuit_breaker_testing"
+        elif self.consecutive_failures > 0:
+            return "degraded"
+        else:
+            return "operational"
+    
+    def get_success_rate(self) -> float:
+        """Get the success rate of LLM requests"""
+        if self.total_requests == 0:
+            return 1.0
+        return self.successful_requests / self.total_requests
+    
+    def get_fallback_usage(self) -> float:
+        """Get the percentage of requests that used VADER fallback"""
+        total_requests = self.total_requests + self.fallback_requests
+        if total_requests == 0:
+            return 0.0
+        return self.fallback_requests / total_requests
+    
+    def is_circuit_breaker_open(self) -> bool:
+        """Check if circuit breaker is open"""
+        return self.circuit_state == CircuitBreakerState.OPEN
+    
+    def get_total_requests(self) -> int:
+        """Get total number of requests"""
+        return self.total_requests + self.fallback_requests
+    
+    def get_failed_requests(self) -> int:
+        """Get number of failed requests"""
+        return self.failed_requests
+    
+    def get_consecutive_failures(self) -> int:
+        """Get number of consecutive failures"""
+        return self.consecutive_failures
+    
+    def get_last_failure_time(self) -> Optional[str]:
+        """Get timestamp of last failure"""
+        if self.last_failure_time:
+            return datetime.fromtimestamp(self.last_failure_time, timezone.utc).isoformat()
+        return None
+    
+    def get_health_recommendations(self) -> List[str]:
+        """Get health recommendations based on current state"""
+        recommendations = []
+        
+        if self.circuit_state == CircuitBreakerState.OPEN:
+            recommendations.append("Circuit breaker is open - LLM service is experiencing issues")
+            recommendations.append("All requests are being handled by VADER fallback")
+            recommendations.append("Check model service health and logs")
+        
+        elif self.consecutive_failures > 0:
+            recommendations.append(f"LLM service has {self.consecutive_failures} consecutive failures")
+            recommendations.append("Monitor service health closely")
+        
+        success_rate = self.get_success_rate()
+        if success_rate < 0.9:
+            recommendations.append(f"LLM service success rate is low ({success_rate:.2%})")
+            recommendations.append("Consider scaling up model service or checking resource constraints")
+        
+        fallback_usage = self.get_fallback_usage()
+        if fallback_usage > 0.5:
+            recommendations.append(f"High VADER fallback usage ({fallback_usage:.2%})")
+            recommendations.append("LLM service may be unreliable or overloaded")
+        
+        if not recommendations:
+            recommendations.append("System is operating normally")
+            recommendations.append("No immediate action required")
+        
+        return recommendations
+    
+    def reset_circuit_breaker(self):
+        """Manually reset the circuit breaker (for testing/admin)"""
+        self.circuit_state = CircuitBreakerState.CLOSED
+        self.consecutive_failures = 0
+        self.circuit_opened_time = None
+        logger.info("Circuit breaker manually reset")
+    
+    def get_metrics(self) -> Dict[str, Any]:
+        """Get comprehensive metrics"""
+        return {
+            "circuit_breaker_state": self.circuit_state.value,
+            "total_requests": self.get_total_requests(),
+            "llm_requests": self.total_requests,
+            "successful_llm_requests": self.successful_requests,
+            "failed_llm_requests": self.failed_requests,
+            "fallback_requests": self.fallback_requests,
+            "success_rate": self.get_success_rate(),
+            "fallback_usage": self.get_fallback_usage(),
+            "consecutive_failures": self.consecutive_failures,
+            "last_failure_time": self.get_last_failure_time(),
+            "recent_failures": len([
+                f for f in self.failure_history 
+                if time.time() - f < self.failure_window
+            ]),
+            "circuit_opened_time": (
+                datetime.fromtimestamp(self.circuit_opened_time, timezone.utc).isoformat()
+                if self.circuit_opened_time else None
+            )
+        }

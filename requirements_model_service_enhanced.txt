@@ -1,0 +1,48 @@
+# Enhanced Model Service Dependencies
+# Lightweight ML inference with swappable models
+
+# Core web framework
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+pydantic>=2.4.0
+
+# ML and NLP libraries
+torch>=2.0.0,<2.2.0
+transformers>=4.35.0
+tokenizers>=0.14.0
+#torchaudio>=2.0.0  # Fixed: was torchaudio, now torchaudio
+sentencepiece>=0.1.99  # For certain tokenizers
+
+# Hugging Face ecosystem
+huggingface-hub>=0.17.0
+datasets>=2.14.0  # For data loading if needed
+accelerate>=0.24.0  # For optimized inference
+
+# Scientific computing
+numpy>=1.24.0
+scipy>=1.11.0
+
+# HTTP client for health checks
+aiohttp>=3.9.0
+httpx>=0.25.0
+
+# Utilities
+python-dotenv>=1.0.0
+click>=8.1.0
+rich>=13.0.0
+
+# Performance monitoring
+psutil>=5.9.0
+
+# Model optimization (optional)
+optimum>=1.14.0
+
+# Async support
+asyncio-throttle>=1.0.2
+
+# Development and testing
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+
+# Security
+cryptography>=41.0.0

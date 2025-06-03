@@ -1,0 +1,20 @@
+# Lightweight requirements for Docker deployment
+# Core API dependencies only - models downloaded at runtime
+
+# FastAPI and web server
+fastapi>=0.100.0
+uvicorn[standard]>=0.20.0
+pydantic>=2.0.0
+
+# Basic utilities (required for health checks and API communication)
+requests>=2.28.0
+python-dotenv>=1.0.0
+
+# Data processing (lightweight)
+numpy>=1.24.0
+
+# Logging and monitoring
+python-json-logger>=2.0.0
+
+# Note: ML dependencies are in requirements_model_service.txt
+# This keeps the API container lightweight (~200MB vs ~2GB with ML)

@@ -1,0 +1,56 @@
+FROM python:3.11-slim
+
+LABEL maintainer="ohsono@gmail.com"
+LABEL description="Gateway API"
+LABEL version="1.0.0"
+
+WORKDIR /app
+
+# Set environment variables
+ENV PYTHONPATH=/app
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV MODEL_SERVICE_MODE=external
+
+# Install minimal system dependencies
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        gcc \
+        g++ \
+        libpq-dev && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# Copy only the requirements first (for better caching)
+COPY requirements_enhanced.txt .
+
+# Install Python dependencies
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements_enhanced.txt
+
+# Create necessary directories
+RUN mkdir -p /app/logs
+
+# Copy only the necessary application code
+COPY app/ ./app/
+COPY config/ ./config/
+
+# Create non-root user for security
+RUN groupadd -r ucla_app_user && useradd -r -g ucla_app_user ucla_app_user && \
+    chown -R ucla_app_user:ucla_app_user /app
+
+USER ucla_app_user
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=90s --retries=3 \
+    CMD curl -f http://localhost:8080/health || exit 1
+
+# Expose port
+EXPOSE 8080
+
+# Create entrypoint script
+RUN echo '#!/bin/bash\ncd /app\nuvicorn app.api.main_enhanced:app --host 0.0.0.0 --port 8080' > /app/entrypoint.sh && \
+    chmod +x /app/entrypoint.sh
+
+# Fix the entry point
+CMD ["/app/entrypoint.sh"]

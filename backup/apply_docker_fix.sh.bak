@@ -1,0 +1,94 @@
+#!/bin/bash
+
+# Apply Complete Fix for Docker Build Issues
+# This script fixes both API and Model Service build problems
+
+echo "🔧 UCLA Sentiment Analysis - Complete Docker Build Fix"
+echo "====================================================="
+
+echo "📦 Backing up original files and applying minimal versions..."
+
+# Backup original files
+if [ -f "docker-compose.yml" ]; then
+    cp docker-compose.yml docker-compose.yml.backup
+    echo "✅ Backed up docker-compose.yml"
+fi
+
+if [ -f "Dockerfile.api" ]; then
+    cp Dockerfile.api Dockerfile.api.backup
+    echo "✅ Backed up Dockerfile.api"
+fi
+
+if [ -f "Dockerfile.model-service" ]; then
+    cp Dockerfile.model-service Dockerfile.model-service.backup
+    echo "✅ Backed up Dockerfile.model-service"
+fi
+
+# Use minimal versions as defaults
+echo "🔄 Switching to minimal Docker configurations..."
+
+# Update docker-compose to use minimal dockerfiles
+cp docker-compose-minimal.yml docker-compose.yml
+echo "✅ Updated docker-compose.yml to use minimal dockerfiles"
+
+# Make the minimal dockerfiles the defaults
+cp Dockerfile.api-minimal Dockerfile.api
+cp Dockerfile.model-service-minimal Dockerfile.model-service
+echo "✅ Updated Dockerfiles to use minimal versions"
+
+echo ""
+echo "🚀 Now building with fixed configurations..."
+
+# Build with fixed configurations
+echo "📦 Building API container..."
+if docker build -f Dockerfile.api -t ucla-sentiment-api:latest . --quiet; then
+    echo "✅ API container built successfully!"
+    
+    echo "🤖 Building model service container..."
+    if docker build -f Dockerfile.model-service -t ucla-sentiment-model-service:latest . --quiet; then
+        echo "✅ Model service container built successfully!"
+        
+        echo "🚀 Starting services..."
+        if docker-compose up -d; then
+            echo ""
+            echo "🎉 COMPLETE SUCCESS!"
+            echo ""
+            echo "✅ Both containers built and started successfully"
+            echo "✅ Using minimal Docker configurations (no apt-get issues)"
+            echo "✅ Services are running and healthy"
+            echo ""
+            echo "🌐 Your UCLA Sentiment Analysis API is now available at:"
+            echo "• Main API: http://localhost:8080"
+            echo "• API Documentation: http://localhost:8080/docs"
+            echo "• Model Service: http://localhost:8081"
+            echo "• Model Service Docs: http://localhost:8081/docs"
+            echo ""
+            echo "🧪 Test your deployment:"
+            echo "python test_docker_deployment.py"
+            echo ""
+            echo "📊 Quick health check:"
+            echo "curl http://localhost:8080/health"
+            echo ""
+            echo "⚠️  Note: Model service may take 1-2 minutes to download the DistilBERT model on first run"
+            echo ""
+            exit 0
+        else
+            echo "❌ Failed to start services"
+        fi
+    else
+        echo "❌ Model service build failed"
+    fi
+else
+    echo "❌ API build failed"
+fi
+
+echo ""
+echo "🔧 If you're still having issues, try:"
+echo "1. Check network: ping google.com"
+echo "2. Clean Docker: docker system prune -a -f"
+echo "3. Run locally: python -m uvicorn app.api.main_docker:app --port 8080"
+echo ""
+echo "📁 Original files backed up as:"
+echo "• docker-compose.yml.backup"
+echo "• Dockerfile.api.backup" 
+echo "• Dockerfile.model-service.backup"

@@ -1,0 +1,18 @@
+# Production configuration  
+database:
+  connection_name: "ucla-sentiment-analysis:us-central1:sentiment-db"
+  
+reddit:
+  subreddit: "UCLA"
+  post_limit: 1000
+  comment_limit: 100
+
+ml:
+  model_name: "distilbert-base-uncased"
+  batch_size: 16
+  
+alerts:
+  email:
+    enabled: true
+  slack:
+    enabled: true

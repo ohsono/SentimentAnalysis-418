@@ -1,0 +1,118 @@
+#!/bin/bash
+
+# Quick Fix for Docker Build Issues - Updated for Both Containers
+# Immediate solution for the apt-get update problem
+
+echo "🚀 Quick Fix for Docker Build Issue (Both Containers)"
+echo "====================================================="
+
+# Make the fix script executable
+chmod +x fix_docker_build.sh
+
+echo "🔧 Applying quick fix for both API and Model Service..."
+
+# Solution 1: Use the minimal Dockerfile (no system packages needed)
+echo "📦 Building API with minimal Dockerfile (no apt-get required)..."
+
+if docker build -f Dockerfile.api-minimal -t ucla-sentiment-api:latest . --quiet; then
+    echo "✅ API container built successfully with minimal approach!"
+    
+    # Build model service with minimal approach
+    echo "🤖 Building model service with minimal Dockerfile..."
+    if docker build -f Dockerfile.model-service-minimal -t ucla-sentiment-model-service:latest . --quiet; then
+        echo "✅ Model service built successfully with minimal approach!"
+        
+        # Start services
+        echo "🚀 Starting services..."
+        if docker-compose up -d; then
+            echo ""
+            echo "🎉 SUCCESS! Your UCLA Sentiment Analysis API is running!"
+            echo ""
+            echo "🌐 Access points:"
+            echo "• API: http://localhost:8080"
+            echo "• API Docs: http://localhost:8080/docs"
+            echo "• Model Service: http://localhost:8081"
+            echo "• Model Service Docs: http://localhost:8081/docs"
+            echo ""
+            echo "🧪 Test with:"
+            echo "curl http://localhost:8080/health"
+            echo "curl http://localhost:8081/health"
+            echo ""
+            echo "📊 Full test:"
+            echo "python test_docker_deployment.py"
+            echo ""
+            echo "⚠️  Note: Model service may take 1-2 minutes to download models on first run"
+            echo ""
+            exit 0
+        else
+            echo "❌ Failed to start services with docker-compose"
+            echo "🔧 Trying manual container start..."
+            
+            # Try starting containers manually
+            echo "🚀 Starting model service..."
+            docker run -d --name model-service -p 8081:8081 ucla-sentiment-model-service:latest
+            
+            echo "🚀 Starting API service..."
+            docker run -d --name api-service -p 8080:8080 \
+                -e MODEL_SERVICE_URL=http://host.docker.internal:8081 \
+                ucla-sentiment-api:latest
+            
+            sleep 5
+            
+            if curl -f http://localhost:8080/health &>/dev/null; then
+                echo "✅ Services started manually!"
+                echo "• API: http://localhost:8080"
+                echo "• Model Service: http://localhost:8081"
+            else
+                echo "❌ Manual start also failed"
+            fi
+        fi
+    else
+        echo "❌ Failed to build model service with minimal approach"
+        echo ""
+        echo "🔧 Let's try an even more minimal model service..."
+        
+        # Create ultra-minimal model service
+        cat > Dockerfile.model-service-ultramin << 'EOF'
+FROM python:3.11-slim
+WORKDIR /app
+ENV PYTHONPATH=/app PYTHONUNBUFFERED=1 HF_HOME=/app/models
+COPY requirements_model_service_minimal.txt .
+RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu && \
+    pip install --no-cache-dir transformers tokenizers fastapi uvicorn requests
+RUN mkdir -p /app/models /app/app/ml
+COPY app/ml/ /app/app/ml/
+COPY model_service.py /app/
+RUN groupadd -r modeluser && useradd -r -g modeluser modeluser && chown -R modeluser:modeluser /app
+USER modeluser
+EXPOSE 8081
+CMD ["python", "model_service.py"]
+EOF
+        
+        echo "🤖 Building ultra-minimal model service..."
+        if docker build -f Dockerfile.model-service-ultramin -t ucla-sentiment-model-service:latest .; then
+            echo "✅ Ultra-minimal model service built!"
+            docker-compose up -d
+        else
+            echo "❌ Ultra-minimal build also failed"
+        fi
+    fi
+else
+    echo "❌ API minimal build failed"
+fi
+
+echo ""
+echo "🔧 If that didn't work, try these alternatives:"
+echo ""
+echo "1. 🏃 Run API locally (no Docker):"
+echo "   python -m uvicorn app.api.main_docker:app --host 0.0.0.0 --port 8080"
+echo ""
+echo "2. 🔧 Full troubleshooting:"
+echo "   ./fix_docker_build.sh"
+echo ""
+echo "3. 🌐 Check network connectivity:"
+echo "   ping google.com"
+echo ""
+echo "4. 🧹 Clean Docker and retry:"
+echo "   docker system prune -a -f"
+echo "   ./quick_fix.sh"

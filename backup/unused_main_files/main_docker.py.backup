@@ -1,0 +1,448 @@
+#!/usr/bin/env python3
+
+"""
+UCLA Sentiment Analysis API - Docker Microservices Version
+Lightweight API that delegates LLM inference to external model service
+"""
+
+from pdb import pm
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
+from .simple_sentiment_analyzer import SimpleSentimentAnalyzer
+from .pydantic_models import *
+from typing import List, Dict, Any, Optional
+from datetime import datetime, timezone
+import logging
+import os
+import time
+import re
+import uvicorn
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# context_window size
+context_window = 1024
+
+# Check deployment mode
+MODEL_SERVICE_MODE = os.getenv("MODEL_SERVICE_MODE", "external").lower()
+
+# Import model service client for external mode
+if MODEL_SERVICE_MODE == "external":
+    try:
+        from app.ml.model_service_client import model_service_client
+        MODEL_CLIENT_AVAILABLE = True
+        logger.info("🌐 Running in external model service mode")
+    except ImportError:
+        MODEL_CLIENT_AVAILABLE = False
+        logger.warning("⚠️ Model service client not available")
+else:
+    # Internal mode - try to use local models
+    try:
+        from app.ml.lightweight_model_manager import lightweight_model_manager
+        MODEL_CLIENT_AVAILABLE = True
+        logger.info("🤖 Running with internal model manager")
+    except ImportError:
+        MODEL_CLIENT_AVAILABLE = False
+        logger.warning("⚠️ Local model manager not available")
+
+
+# Initialize sentiment analyzer
+sentiment_analyzer = SimpleSentimentAnalyzer()
+
+# ============================================
+# SAMPLE DATA (LIGHTWEIGHT)
+# ============================================
+# SAMPLE_ALERTS = [
+#     {
+#         'id': 'alert_001',
+#         'content_text': 'Feeling really overwhelmed with finals coming up...',
+#         'alert_type': 'stress',
+#         'severity': 'medium',
+#         'timestamp': datetime.now(timezone.utc).isoformat(),
+#         'status': 'active'
+#     }
+# ]
+
+# SAMPLE_POSTS = [
+#     {
+#         'post_id': 'sample_1',
+#         'title': 'UCLA Computer Science Program Review',
+#         'selftext': 'Just finished my first year in CS at UCLA. The program is challenging but amazing!',
+#         'score': 150,
+#         'created_utc': datetime.now(timezone.utc).isoformat(),
+#         'author': 'cs_student_2024'
+#     }
+# ]
+
+# ============================================
+# FASTAPI APP
+# ============================================
+
+app = FastAPI(
+    title="UCLA Sentiment Analysis API",
+    description="Microservices-based sentiment analysis API",
+    version="2.0.0",
+    docs_url="/docs",
+    redoc_url="/redoc"
+)
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# ============================================
+# API ENDPOINTS
+# ============================================
+
+@app.get("/")
+async def root():
+    """API root endpoint"""
+    endpoints = {
+        "health": "GET /health - Health check",
+        "docs": "GET /docs - Interactive API documentation", 
+        # "predict": "POST /predict - Simple(VAEDAR) sentiment analysis",
+        # "predict_batch": "POST /predict/batch - Simple(VAEDAR) batch analysis",
+        "predict_llm": "POST /predict/llm - LLM-based sentiment analysis",
+        "predict_llm_batch": "POST /predict/llm/batch - LLM-based batch analysis",
+        "models": "GET /models - List available models",
+        # "model_info": "GET /models/{model_key} - Get model information",
+        # "scrape": "POST /scrape - Mock Reddit scraping",
+        # "analytics": "GET /analytics - Analytics data (mock implementation)",
+        # "alerts": "GET /alerts - Active alerts",
+        # "alert_update": "POST /alerts/{id}/status - Update alert status",
+        "status": "GET /status - System status"
+    }
+    
+    return {
+        "message": "UCLA Sentiment Analysis API", 
+        "version": "2.0.1",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "status": "operational",
+        "deployment_mode": MODEL_SERVICE_MODE,
+        "model_service_available": MODEL_CLIENT_AVAILABLE,
+        "endpoints": endpoints,
+        "description": "Microservices-based real-time sentiment analysis for UCLA community content"
+    }
+
+@app.get("/health", response_model=HealthResponse)
+async def health_check():
+    """Health check endpoint"""
+    services = {
+        "api_server": "healthy",
+        "simple_analyzer": "operational",
+        "alert_service": "operational",
+        "database": "simulated",
+        "api_server": "healthy",
+        "cors": "enabled"
+    }
+    
+    if MODEL_SERVICE_MODE == "external" and MODEL_CLIENT_AVAILABLE:
+        model_service_status = model_service_client.get_service_status()
+        services["model_service"] = "available" if model_service_status["available"] else "unavailable"
+        services["model_service_url"] = model_service_status["url"]
+    elif MODEL_SERVICE_MODE == "internal":
+        services["model_manager"] = "internal" if MODEL_CLIENT_AVAILABLE else "unavailable"
+    
+    return HealthResponse(
+        status="healthy",
+        timestamp=datetime.now(timezone.utc).isoformat(),
+        version="2.0.1",
+        services=services
+    )
+
+# @app.post("/predict", response_model=SentimentResponse)
+# async def predict_sentiment(request: SentimentRequest):
+#     """
+#     Simple sentiment analysis (always available)
+#     """
+#     try:
+#         logger.info(f"Simple analysis for: '{request.text[:50]}...'")
+        
+#         result = sentiment_analyzer.analyze(request.text)
+#         result['source'] = 'simple-rules'
+#         result['model_used'] = 'simple'
+
+#         # Remove probabilities if not requested
+#         if not request.include_probabilities:
+#             result.pop('probabilities', None)
+
+#         logger.info(f"Simple result: {result['sentiment']} (confidence: {result['confidence']:.2f})")
+#         return result
+        
+#     except Exception as e:
+#         logger.error(f"Error in simple prediction: {e}")
+#         raise HTTPException(status_code=500, detail=f"Simple sentiment analysis failed: {str(e)}")
+
+@app.post("/predict/llm")
+async def predict_llm_sentiment(request: LLMSentimentRequest):
+    """LLM-powered sentiment analysis via model service"""
+    try:
+        if not MODEL_CLIENT_AVAILABLE:
+            raise HTTPException(
+                status_code=503, 
+                detail="Model service not available in this deployment"
+            )
+        
+        logger.info(f"LLM analysis ({request.model}) for: '{request.text[:50]}...'")
+        
+        if MODEL_SERVICE_MODE == "external":
+            result = model_service_client.predict_sentiment(
+                request.text, 
+                request.model, 
+                request.include_probabilities
+            )
+        else:
+            # Internal mode
+            result = lightweight_model_manager.predict_sentiment(request.text, request.model)
+            if not request.include_probabilities:
+                result.pop('probabilities', None)
+        
+        return result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in LLM prediction: {e}")
+        raise HTTPException(status_code=500, detail=f"LLM sentiment analysis failed: {str(e)}")
+
+# @app.post("/predict/batch")
+# async def predict_batch_sentiment(texts: List[str]):
+#     """
+#     Simple batch sentiment analysis
+#     """
+#     try:
+#         if len(texts) > 100:
+#             raise HTTPException(status_code=400, detail="Maximum 100 texts allowed per batch")
+        
+#         start_time = time.time()
+#         results = []
+        
+#         for i, text in enumerate(texts):
+#             result = sentiment_analyzer.analyze(text)
+#             result['batch_index'] = i
+#             result['source'] = 'simple-rules'
+#             results.append(result)
+        
+#         total_time = (time.time() - start_time) * 1000
+
+#         # Calculate summary statistics
+#         successful_results = [r for r in results if 'error' not in r]
+#         sentiments = [r['sentiment'] for r in successful_results]
+        
+#         return {
+#             "results": results,
+#             "summary": {
+#                 "total_processed": len(results),
+#                 "successful": len(successful_results),
+#                 "failed": len(results) - len(successful_results),
+#                 "method": "simple-rules",
+#                 "total_processing_time_ms": round(total_time, 2),
+#                 "average_time_per_text_ms": round(total_time / len(texts), 2),
+#                 "sentiment_distribution": {
+#                     "positive": sentiments.count('positive'),
+#                     "negative": sentiments.count('negative'),
+#                     "neutral": sentiments.count('neutral')
+#                 }
+#             },
+#             "timestamp": datetime.now(timezone.utc).isoformat()
+#         }
+
+#     except Exception as e:
+#         logger.error(f"Error in batch prediction: {e}")
+#         raise HTTPException(status_code=500, detail=f"Batch sentiment analysis failed: {str(e)}")
+
+@app.post("/predict/llm/batch")
+async def predict_llm_batch_sentiment(request: LLMBatchRequest):
+    """
+    LLM batch sentiment analysis via model service
+    """
+    try:
+        if not MODEL_CLIENT_AVAILABLE:
+            raise HTTPException(
+                status_code=503, 
+                detail="Model service not available"
+            )
+
+        # context window limit for LLM models
+        if len(request.texts) > context_window:
+            raise HTTPException(status_code=400, detail=f"Maximum {context_window} texts for LLM batch processing")
+        
+        if MODEL_SERVICE_MODE == "external":
+            result = model_service_client.predict_batch(request.texts, request.model)
+        else:
+            # Internal mode fallback
+            result = lightweight_model_manager.predict_batch(request.texts, request.model)
+        
+        return result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in LLM batch prediction: {e}")
+        raise HTTPException(status_code=500, detail=f"LLM batch analysis failed: {str(e)}")
+
+@app.get("/models")
+async def list_models():
+    """List available models"""
+    try:
+        if not MODEL_CLIENT_AVAILABLE:
+            return {
+                "available": False,
+                "message": "Model service not available",
+                "deployment_mode": MODEL_SERVICE_MODE
+            }
+        
+        if MODEL_SERVICE_MODE == "external":
+            result = model_service_client.list_models()
+        else:
+            models = lightweight_model_manager.list_available_models()
+            result = {
+                "available": True,
+                "models": models,
+                "deployment_mode": "internal"
+            }
+        
+        result["timestamp"] = datetime.now(timezone.utc).isoformat()
+        return result
+        
+    except Exception as e:
+        logger.error(f"Error listing models: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to list models: {str(e)}")
+
+# @app.post("/scrape")
+# async def scrape_reddit(request: ScrapeRequest):
+#     """Mock Reddit scraping with sentiment analysis"""
+#     try:
+#         posts = SAMPLE_POSTS[:request.post_limit]
+        
+#         # Analyze sentiment for each post
+#         for post in posts:
+#             text = f"{post['title']} {post['selftext']}"
+            
+#             # Try LLM first, fallback to simple
+#             if MODEL_CLIENT_AVAILABLE and MODEL_SERVICE_MODE == "external":
+#                 try:
+#                     sentiment_result = model_service_client.predict_sentiment(text)
+#                 except:
+#                     sentiment_result = sentiment_analyzer.analyze(text)
+#                     sentiment_result['source'] = 'fallback-simple'
+#             else:
+#                 sentiment_result = sentiment_analyzer.analyze(text)
+#                 sentiment_result['source'] = 'simple-rules'
+            
+#             post['sentiment_analysis'] = sentiment_result
+        
+#         sentiments = [p['sentiment_analysis']['sentiment'] for p in posts]
+        
+#         return {
+#             "status": "success",
+#             "message": f"Mock scraping r/{request.subreddit}",
+#             "data": {
+#                 "posts_collected": len(posts),
+#                 "analysis_method": "hybrid" if MODEL_CLIENT_AVAILABLE else "simple",
+#                 "sentiment_summary": {
+#                     "positive": sentiments.count('positive'),
+#                     "negative": sentiments.count('negative'),
+#                     "neutral": sentiments.count('neutral')
+#                 }
+#             },
+#             "sample_posts": posts,
+#             "timestamp": datetime.now(timezone.utc).isoformat()
+#         }
+        
+#     except Exception as e:
+#         logger.error(f"Error in scraping: {e}")
+#         raise HTTPException(status_code=500, detail=f"Scraping failed: {str(e)}")
+
+# @app.get("/analytics")
+# async def get_analytics():
+#     """Analytics data"""
+#     return {
+#         "overview": {
+#             "total_posts": 1234,
+#             "avg_sentiment": 0.234,
+#             "deployment_mode": MODEL_SERVICE_MODE,
+#             "model_service_available": MODEL_CLIENT_AVAILABLE
+#         },
+#         "sentiment_distribution": {"positive": 45.2, "neutral": 38.1, "negative": 16.7},
+#         "deployment_info": {
+#             "mode": MODEL_SERVICE_MODE,
+#             "containerized": True,
+#             "microservices": MODEL_SERVICE_MODE == "external"
+#         },
+#         "timestamp": datetime.now(timezone.utc).isoformat()
+#     }
+
+# @app.get("/alerts")
+# async def get_alerts():
+#     """Active alerts"""
+#     return {
+#         "active_alerts": SAMPLE_ALERTS,
+#         "stats": {"total_active": len(SAMPLE_ALERTS)},
+#         "timestamp": datetime.now(timezone.utc).isoformat()
+#     }
+
+@app.get("/status")
+async def get_system_status():
+    """System status"""
+    status = {
+        "api": "operational",
+        "version": "1.0.0",
+        "deployment_mode": MODEL_SERVICE_MODE,
+        "containerized": True,
+        "services": {
+            "simple_analyzer": "operational",
+            "api_server": "healthy"
+        }
+    }
+    
+    if MODEL_CLIENT_AVAILABLE:
+        if MODEL_SERVICE_MODE == "external":
+            model_status = model_service_client.get_service_status()
+            status["services"]["model_service"] = "available" if model_status["available"] else "unavailable"
+            status["model_service_info"] = model_status
+        else:
+            status["services"]["model_manager"] = "internal"
+    
+    status["timestamp"] = datetime.now(timezone.utc).isoformat()
+    return status
+
+# ============================================
+# STARTUP/SHUTDOWN
+# ============================================
+
+@app.on_event("startup")
+async def startup_event():
+    logger.info("🚀 UCLA Sentiment Analysis API starting...")
+    logger.info(f"🐳 Deployment mode: {MODEL_SERVICE_MODE}")
+    logger.info(f"🤖 Model client available: {MODEL_CLIENT_AVAILABLE}")
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    logger.info("🛑 API shutting down...")
+
+# ============================================
+# MAIN ENTRY POINT
+# ============================================
+
+if __name__ == "__main__":
+    host = os.getenv("HOST", "0.0.0.0")
+    port = int(os.getenv("PORT", 8080))
+    
+    logger.info(f"🚀 Starting API on {host}:{port}")
+    
+    uvicorn.run(
+        "app.api.main:app",
+        host=host,
+        port=port,
+        reload=False,
+        log_level="info"
+    )

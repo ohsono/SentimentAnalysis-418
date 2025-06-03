@@ -1,0 +1,66 @@
+version: '3.8'
+
+services:
+  # Main API Service (lightweight, no models)
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api-minimal
+    ports:
+      - "8080:8080"
+    environment:
+      - MODEL_SERVICE_URL=http://model-service:8081
+      - MODEL_SERVICE_MODE=external
+      - PYTHONPATH=/app
+    volumes:
+      - ./logs:/app/logs
+    depends_on:
+      - model-service
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8080/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks:
+      - sentiment-network
+
+  # Model Service (ML inference)
+  model-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.model-service-minimal
+    ports:
+      - "8081:8081"
+    environment:
+      - PRELOAD_MODEL=distilbert-sentiment
+      - HF_HOME=/app/models
+      - TRANSFORMERS_CACHE=/app/models
+      - PYTHONPATH=/app
+    volumes:
+      - model-cache:/app/models
+      - ./logs:/app/logs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8081/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+    networks:
+      - sentiment-network
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 1G
+
+volumes:
+  model-cache:
+    driver: local
+
+networks:
+  sentiment-network:
+    driver: bridge

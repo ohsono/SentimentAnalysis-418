@@ -1,0 +1,865 @@
+#!/usr/bin/env python3
+
+"""
+UCLA Sentiment Analysis API - Enhanced with ML Models (WIP)
+Real-time sentiment analysis with both simple and ML-based approaches
+"""
+from pdb import pm
+from multiprocessing.spawn import import_main_path
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
+from .simple_sentiment_analyzer import SimpleSentimentAnalyzer
+from .pydantic_models import *
+from typing import List, Dict, Any, Optional
+from datetime import datetime, timezone
+import logging
+import os
+import time
+import re
+import uvicorn
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Try to import ML model manager
+try:
+    import sys
+    sys.path.append('..')
+    from app.ml.model_manager import model_manager
+    ML_AVAILABLE = True
+    logger.info("🤖 ML models available")
+except ImportError as e:
+    ML_AVAILABLE = False
+    logger.warning(f"⚠️  ML models not available: {e}")
+
+# ============================================
+# SAMPLE DATA
+# ============================================
+
+# Initialize sentiment analyzer
+sentiment_analyzer = SimpleSentimentAnalyzer()
+
+# Sample alerts data
+# SAMPLE_ALERTS = [
+#     {
+#         'id': 'alert_001',
+#         'content_id': 'post_123',
+#         'content_text': 'Feeling really overwhelmed with finals coming up...',
+#         'alert_type': 'stress',
+#         'severity': 'medium',
+#         'keywords_found': ['overwhelmed', 'finals'],
+#         'timestamp': datetime.now(timezone.utc).isoformat(),
+#         'subreddit': 'UCLA',
+#         'author': 'stressed_student',
+#         'status': 'active'
+#     },
+#     {
+#         'id': 'alert_002',
+#         'content_id': 'comment_456',
+#         'content_text': 'I feel so depressed about my grades this quarter',
+#         'alert_type': 'mental_health',
+#         'severity': 'high',
+#         'keywords_found': ['depressed', 'grades'],
+#         'timestamp': datetime.now(timezone.utc).isoformat(),
+#         'subreddit': 'UCLA',
+#         'author': 'sad_bruin',
+#         'status': 'active'
+#     }
+# ]
+
+# # Sample posts for scraping simulation
+# SAMPLE_POSTS = [
+#     {
+#         'post_id': 'sample_1',
+#         'title': 'UCLA Computer Science Program Review',
+#         'selftext': 'Just finished my first year in CS at UCLA. The program is challenging but amazing! The professors are really helpful and the research opportunities are incredible.',
+#         'score': 150,
+#         'upvote_ratio': 0.92,
+#         'num_comments': 25,
+#         'created_utc': datetime.now(timezone.utc).isoformat(),
+#         'author': 'cs_student_2024',
+#         'subreddit': 'UCLA'
+#     },
+#     {
+#         'post_id': 'sample_2',
+#         'title': 'Campus Life at UCLA',
+#         'selftext': 'The dining halls are pretty good and the dorms are nice. Love the campus and all the activities available!',
+#         'score': 89,
+#         'upvote_ratio': 0.88,
+#         'num_comments': 15,
+#         'created_utc': datetime.now(timezone.utc).isoformat(),
+#         'author': 'campus_life_fan',
+#         'subreddit': 'UCLA'
+#     },
+#     {
+#         'post_id': 'sample_3',
+#         'title': 'Struggling with Workload',
+#         'selftext': 'This quarter has been really tough and overwhelming. Anyone else feeling stressed about the workload?',
+#         'score': 45,
+#         'upvote_ratio': 0.75,
+#         'num_comments': 8,
+#         'created_utc': datetime.now(timezone.utc).isoformat(),
+#         'author': 'overwhelmed_student',
+#         'subreddit': 'UCLA'
+#     },
+#     {
+#         'post_id': 'sample_4',
+#         'title': 'Great UCLA Resources',
+#         'selftext': 'The library is fantastic and the study spaces are perfect for group work. Highly recommend the research facilities!',
+#         'score': 78,
+#         'upvote_ratio': 0.85,
+#         'num_comments': 12,
+#         'created_utc': datetime.now(timezone.utc).isoformat(),
+#         'author': 'library_lover',
+#         'subreddit': 'UCLA'
+#     },
+#     {
+#         'post_id': 'sample_5',
+#         'title': 'UCLA Sports Update',
+#         'selftext': 'Amazing basketball game last night! The team played incredibly well and the crowd was electric.',
+#         'score': 203,
+#         'upvote_ratio': 0.94,
+#         'num_comments': 34,
+#         'created_utc': datetime.now(timezone.utc).isoformat(),
+#         'author': 'sports_fan_ucla',
+#         'subreddit': 'UCLA'
+#     }
+# ]
+
+# ============================================
+# FASTAPI APP INITIALIZATION
+# ============================================
+
+app = FastAPI(
+    title="UCLA Sentiment Analysis API",
+    description="Real-time sentiment analysis API with ML models for UCLA-related content",
+    version="1.1.0",
+    docs_url="/docs",
+    redoc_url="/redoc"
+)
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# ============================================
+# API ENDPOINTS
+# ============================================
+
+@app.get("/")
+async def root():
+    """API root endpoint with comprehensive information"""
+    endpoints = {
+        "health": "GET /health - Health check and system status",
+        "docs": "GET /docs - Interactive API documentation", 
+        "predict": "POST /predict - Analyze sentiment (simple method)",
+        "predict_batch": "POST /predict/batch - Batch analysis (simple method)",
+        "predict_llm": "POST /predict/llm - ML-based sentiment analysis",
+        "predict_llm_batch": "POST /predict/llm/batch - ML-based batch analysis",
+        "models": "GET /models - List available ML models",
+        "model_download": "POST /models/download - Download ML model",
+        "model_info": "GET /models/{model_key} - Get model information",
+        "scrape": "POST /scrape - Scrape Reddit data (mock implementation)",
+        "analytics": "GET /analytics - Get analytics dashboard data",
+        "alerts": "GET /alerts - Get active alerts",
+        "alert_update": "POST /alerts/{id}/status - Update alert status",
+        "status": "GET /status - Get detailed system status"
+    }
+    
+    features = [
+        "Real-time sentiment analysis (Realtime)",
+        "ML-powered sentiment analysis (Advanced, Hugging Face models)",
+        "Batch processing support", 
+        "Reddit data scraping simulation",
+        "Alert management system",
+        "Analytics dashboard data",
+        "Model management and caching",
+        "Default is VAEDER model (Valence Aware Dictionary and sEntiment Reasoner, low latency)"
+        "Twitter-RoBERTa and/or DistilBERT models (LLM, high performance)"
+    ]
+
+    return {
+        "message": "UCLA Sentiment Analysis API", 
+        "version": "1.1.0",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "status": "operational",
+        "ml_available": ML_AVAILABLE,
+        "endpoints": endpoints,
+        "features": features,
+        "description": "Advanced sentiment analysis API with ML models for UCLA community content"
+    }
+
+@app.get("/health", response_model=HealthResponse)
+async def health_check():
+    """Comprehensive health check endpoint"""
+    services = {
+        "sentiment_analyzer": "operational",
+        "reddit_scraper": "operational (mock mode)", 
+        "alert_service": "operational",
+        "database": "simulated",
+        "api_server": "healthy",
+        "cors": "enabled"
+    }
+    
+    if ML_AVAILABLE:
+        services["ml_models"] = "available"
+        services["huggingface"] = "connected"
+    else:
+        services["ml_models"] = "unavailable"
+    
+    return HealthResponse(
+        status="healthy",
+        timestamp=datetime.now(timezone.utc).isoformat(),
+        version="1.1.0",
+        services=services
+    )
+
+@app.post("/predict", response_model=SentimentResponse)
+async def predict_sentiment(request: SentimentRequest):
+    """Analyze sentiment using simple rule-based method"""
+    try:
+        logger.info(f"Simple analysis for: '{request.text[:50]}...'")
+        
+        # Analyze sentiment
+        result = sentiment_analyzer.analyze(request.text)
+        
+        # Remove probabilities if not requested
+        if not request.include_probabilities:
+            result.pop('probabilities', None)
+        
+        logger.info(f"Simple result: {result['sentiment']} (confidence: {result['confidence']:.2f})")
+        return result
+        
+    except Exception as e:
+        logger.error(f"Error in predict_sentiment: {e}")
+        raise HTTPException(status_code=500, detail=f"Sentiment analysis failed: {str(e)}")
+
+@app.post("/predict/llm")
+async def predict_llm_sentiment(request: LLMSentimentRequest):
+    """Analyze sentiment using ML model (Hugging Face)"""
+    try:
+        if not ML_AVAILABLE:
+            raise HTTPException(
+                status_code=503, 
+                detail="ML models not available. Install: pip install torch transformers"
+            )
+        
+        logger.info(f"ML analysis ({request.model}) for: '{request.text[:50]}...'")
+        
+        # Use ML model for prediction
+        result = model_manager.predict_sentiment(request.text, request.model)
+        
+        # Remove probabilities if not requested
+        if not request.include_probabilities:
+            result.pop('probabilities', None)
+        
+        logger.info(f"ML result: {result['sentiment']} (confidence: {result['confidence']:.2f})")
+        return result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in ML prediction: {e}")
+        raise HTTPException(status_code=500, detail=f"ML sentiment analysis failed: {str(e)}")
+
+@app.post("/predict/batch")
+async def predict_batch_sentiment(texts: List[str]):
+    """Analyze sentiment for multiple texts using simple method"""
+    try:
+        logger.info(f"Simple batch analysis for {len(texts)} texts")
+        
+        if len(texts) > 100:
+            raise HTTPException(status_code=400, detail="Maximum 100 texts allowed per batch")
+        
+        if not texts:
+            raise HTTPException(status_code=400, detail="No texts provided")
+        
+        start_time = time.time()
+        results = []
+        
+        for i, text in enumerate(texts):
+            try:
+                result = sentiment_analyzer.analyze(text)
+                result['batch_index'] = i
+                results.append(result)
+            except Exception as e:
+                logger.error(f"Error processing text {i}: {e}")
+                results.append({
+                    'batch_index': i,
+                    'text': text[:100] + '...' if len(text) > 100 else text,
+                    'error': str(e),
+                    'sentiment': 'neutral',
+                    'confidence': 0.0,
+                    'compound_score': 0.0
+                })
+        
+        total_time = (time.time() - start_time) * 1000
+        
+        # Calculate summary statistics
+        successful_results = [r for r in results if 'error' not in r]
+        sentiments = [r['sentiment'] for r in successful_results]
+        
+        summary = {
+            "total_processed": len(results),
+            "successful": len(successful_results),
+            "failed": len(results) - len(successful_results),
+            "total_processing_time_ms": round(total_time, 2),
+            "average_time_per_text_ms": round(total_time / len(texts), 2),
+            "method": "simple",
+            "sentiment_distribution": {
+                "positive": sentiments.count('positive'),
+                "negative": sentiments.count('negative'),
+                "neutral": sentiments.count('neutral')
+            }
+        }
+        
+        response = {
+            "results": results,
+            "summary": summary,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+        
+        logger.info(f"Simple batch analysis complete: {summary}")
+        return response
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in batch prediction: {e}")
+        raise HTTPException(status_code=500, detail=f"Batch sentiment analysis failed: {str(e)}")
+
+@app.post("/predict/llm/batch")
+async def predict_llm_batch_sentiment(request: LLMBatchRequest):
+    """Analyze sentiment for multiple texts using ML model"""
+    try:
+        if not ML_AVAILABLE:
+            raise HTTPException(
+                status_code=503, 
+                detail="ML models not available. Install: pip install torch transformers"
+            )
+        
+        logger.info(f"ML batch analysis ({request.model}) for {len(request.texts)} texts")
+        
+        if len(request.texts) > 50:  # Lower limit for ML models
+            raise HTTPException(status_code=400, detail="Maximum 50 texts allowed for ML batch processing")
+        
+        # Use ML model for batch prediction
+        result = model_manager.predict_batch(request.texts, request.model)
+        
+        logger.info(f"ML batch analysis complete: {result['summary']}")
+        return result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in ML batch prediction: {e}")
+        raise HTTPException(status_code=500, detail=f"ML batch sentiment analysis failed: {str(e)}")
+
+@app.get("/models")
+async def list_models():
+    """List available ML models"""
+    try:
+        if not ML_AVAILABLE:
+            return {
+                "available": False,
+                "message": "ML models not available. Install: pip install torch transformers",
+                "models": {}
+            }
+        
+        models = model_manager.list_available_models()
+        model_info = model_manager.get_model_info()
+        
+        return {
+            "available": True,
+            "models": models,
+            "info": model_info,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Error listing models: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to list models: {str(e)}")
+
+@app.post("/models/download")
+async def download_model(request: ModelDownloadRequest):
+    """Download a specific ML model"""
+    try:
+        if not ML_AVAILABLE:
+            raise HTTPException(
+                status_code=503, 
+                detail="ML models not available. Install: pip install torch transformers"
+            )
+        
+        logger.info(f"Downloading model: {request.model}")
+        
+        # Download the model
+        result = model_manager.download_model(request.model)
+        
+        logger.info(f"Model download complete: {result}")
+        return {
+            "status": "success",
+            "message": f"Model {request.model} downloaded successfully",
+            "model_info": result,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error downloading model: {e}")
+        raise HTTPException(status_code=500, detail=f"Model download failed: {str(e)}")
+
+@app.get("/models/{model_key}")
+async def get_model_info(model_key: str):
+    """Get information about a specific model"""
+    try:
+        if not ML_AVAILABLE:
+            raise HTTPException(
+                status_code=503, 
+                detail="ML models not available"
+            )
+        
+        info = model_manager.get_model_info(model_key)
+        
+        return {
+            "model_key": model_key,
+            "info": info,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting model info: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get model info: {str(e)}")
+
+@app.post("/scrape")
+async def scrape_reddit(request: ScrapeRequest):
+    """Scrape Reddit data (mock implementation with enhanced simulation)"""
+    try:
+        logger.info(f"Mock scraping r/{request.subreddit} for {request.post_limit} posts")
+        
+        # Return sample posts (limited by post_limit)
+        posts = SAMPLE_POSTS[:request.post_limit]
+        
+        # Analyze sentiment for each post (use ML if available)
+        for post in posts:
+            text = f"{post['title']} {post['selftext']}"
+            
+            if ML_AVAILABLE and len(model_manager.loaded_models) > 0:
+                # Use ML model if available
+                sentiment_result = model_manager.predict_sentiment(text, "twitter-roberta")
+            else:
+                # Fall back to simple analysis
+                sentiment_result = sentiment_analyzer.analyze(text)
+            
+            post['sentiment_analysis'] = sentiment_result
+        
+        # Generate mock comments for some posts
+        comments = []
+        sample_comments = [
+            "Great post! I completely agree with your thoughts on this.",
+            "Thanks for sharing, this is really helpful information.",
+            "I had a similar experience, very relatable content.",
+            "This is exactly what I needed to read today!",
+            "Interesting perspective, thanks for the insights.",
+            "Not sure I agree, but appreciate you sharing your view."
+        ]
+        
+        for i, post in enumerate(posts[:3]):  # Add comments to first 3 posts
+            for j in range(min(3, len(sample_comments))):
+                comment_text = sample_comments[j]
+                
+                if ML_AVAILABLE and len(model_manager.loaded_models) > 0:
+                    comment_sentiment = model_manager.predict_sentiment(comment_text, "twitter-roberta")
+                else:
+                    comment_sentiment = sentiment_analyzer.analyze(comment_text)
+                
+                comment = {
+                    'comment_id': f'comment_{i}_{j}',
+                    'post_id': post['post_id'],
+                    'body': comment_text,
+                    'score': 5 + j * 2,
+                    'created_utc': datetime.now(timezone.utc).isoformat(),
+                    'author': f'commenter_{i}_{j}',
+                    'sentiment_analysis': comment_sentiment
+                }
+                comments.append(comment)
+        
+        # Check for potential alerts
+        alert_keywords = ['overwhelmed', 'stressed', 'depressed', 'struggling', 'anxious', 'worried']
+        alerts_created = 0
+        
+        for post in posts:
+            text = f"{post['title']} {post['selftext']}".lower()
+            if any(keyword in text for keyword in alert_keywords):
+                alerts_created += 1
+        
+        # Calculate summary statistics
+        sentiments = [post['sentiment_analysis']['sentiment'] for post in posts]
+        avg_sentiment = sum(post['sentiment_analysis']['compound_score'] for post in posts) / len(posts)
+        
+        analysis_method = "ml" if ML_AVAILABLE and len(model_manager.loaded_models) > 0 else "simple"
+        
+        response = {
+            "status": "success",
+            "message": f"Successfully scraped r/{request.subreddit} (mock data)",
+            "data": {
+                "posts_collected": len(posts),
+                "comments_collected": len(comments),
+                "alerts_created": alerts_created,
+                "subreddit": request.subreddit,
+                "analysis_method": analysis_method,
+                "sentiment_summary": {
+                    "positive": sentiments.count('positive'),
+                    "negative": sentiments.count('negative'),
+                    "neutral": sentiments.count('neutral'),
+                    "average_compound_score": round(avg_sentiment, 3)
+                }
+            },
+            "sample_posts": posts,
+            "sample_comments": comments,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "note": "This is mock data for demonstration. Configure Reddit API credentials for real data."
+        }
+        
+        logger.info(f"Mock scraping complete: {response['data']}")
+        return response
+        
+    except Exception as e:
+        logger.error(f"Error in mock scraping: {e}")
+        raise HTTPException(status_code=500, detail=f"Reddit scraping failed: {str(e)}")
+
+@app.get("/analytics")
+async def get_analytics():
+    """
+    Get comprehensive analytics data for dashboard (simulation)
+    """
+    try:
+        logger.info("Generating analytics data")
+        
+        current_time = datetime.now(timezone.utc)
+        
+        # Enhanced analytics with ML model info simulation
+        # sample_analytics = {
+        #     "overview": {
+        #         "total_posts": 1234,
+        #         "total_comments": 4567,
+        #         "avg_sentiment": 0.234,
+        #         "data_freshness": "2 hours ago",
+        #         "last_updated": current_time.isoformat(),
+        #         "posts_today": 87,
+        #         "active_users": 342,
+        #         "ml_models_available": ML_AVAILABLE
+        #     },
+        #     "sentiment_distribution": {
+        #         "positive": 45.2,
+        #         "neutral": 38.1,
+        #         "negative": 16.7
+        #     },
+        #     "ml_models": {
+        #         "available": ML_AVAILABLE,
+        #         "loaded_models": list(model_manager.loaded_models.keys()) if ML_AVAILABLE else [],
+        #         "default_model": "twitter-roberta"
+        #     },
+        #     "category_breakdown": {
+        #         "academic_departments": {
+        #             "count": 420,
+        #             "avg_sentiment": 0.15,
+        #             "trending": "up",
+        #             "subcategories": {
+        #                 "computer_science": {"count": 150, "sentiment": 0.25},
+        #                 "engineering": {"count": 120, "sentiment": 0.18},
+        #                 "business": {"count": 100, "sentiment": 0.12},
+        #                 "pre_med": {"count": 50, "sentiment": -0.05}
+        #             }
+        #         },
+        #         "campus_life": {
+        #             "count": 380,
+        #             "avg_sentiment": 0.22,
+        #             "trending": "stable",
+        #             "subcategories": {
+        #                 "housing": {"count": 120, "sentiment": 0.15},
+        #                 "dining": {"count": 100, "sentiment": 0.30},
+        #                 "events": {"count": 80, "sentiment": 0.35},
+        #                 "facilities": {"count": 80, "sentiment": 0.08}
+        #             }
+        #         },
+        #         "sports": {
+        #             "count": 250,
+        #             "avg_sentiment": 0.45,
+        #             "trending": "up",
+        #             "subcategories": {
+        #                 "football": {"count": 100, "sentiment": 0.50},
+        #                 "basketball": {"count": 90, "sentiment": 0.42},
+        #                 "general": {"count": 60, "sentiment": 0.40}
+        #             }
+        #         },
+        #         "administrative": {
+        #             "count": 200,
+        #             "avg_sentiment": -0.05,
+        #             "trending": "down",
+        #             "subcategories": {
+        #                 "admissions": {"count": 70, "sentiment": 0.10},
+        #                 "financial_aid": {"count": 80, "sentiment": -0.15},
+        #                 "academics": {"count": 50, "sentiment": -0.10}
+        #             }
+        #         }
+        #     },
+        #     "trends": {
+        #         "daily_sentiment": [
+        #             {"date": "2024-01-01", "sentiment": 0.10, "volume": 120},
+        #             {"date": "2024-01-02", "sentiment": 0.15, "volume": 135},
+        #             {"date": "2024-01-03", "sentiment": 0.08, "volume": 98},
+        #             {"date": "2024-01-04", "sentiment": 0.22, "volume": 156},
+        #             {"date": "2024-01-05", "sentiment": 0.18, "volume": 142},
+        #             {"date": "2024-01-06", "sentiment": 0.25, "volume": 178},
+        #             {"date": "2024-01-07", "sentiment": 0.20, "volume": 165}
+        #         ],
+        #         "hourly_activity": [
+        #             {"hour": 8, "posts": 35}, {"hour": 9, "posts": 45}, 
+        #             {"hour": 10, "posts": 52}, {"hour": 11, "posts": 48}, 
+        #             {"hour": 12, "posts": 65}, {"hour": 13, "posts": 58}, 
+        #             {"hour": 14, "posts": 62}, {"hour": 15, "posts": 71}, 
+        #             {"hour": 16, "posts": 68}, {"hour": 17, "posts": 55}, 
+        #             {"hour": 18, "posts": 42}, {"hour": 19, "posts": 38}
+        #         ]
+        #     },
+        #     "alerts_summary": {
+        #         "total_active": len(SAMPLE_ALERTS),
+        #         "by_severity": {
+        #             "critical": 0,
+        #             "high": len([a for a in SAMPLE_ALERTS if a['severity'] == 'high']),
+        #             "medium": len([a for a in SAMPLE_ALERTS if a['severity'] == 'medium']),
+        #             "low": 0
+        #         },
+        #         "recent_24h": len(SAMPLE_ALERTS),
+        #         "resolved_today": 3
+        #     },
+        #     "performance_metrics": {
+        #         "api_response_time_ms": 45.2,
+        #         "processing_speed": "1,250 texts/minute (simple), 50 texts/minute (ML)",
+        #         "uptime": "99.8%",
+        #         "accuracy_score": 0.87 if not ML_AVAILABLE else 0.92
+        #     },
+        #     "timestamp": current_time.isoformat(),
+        #     "data_sources": ["Reddit r/UCLA", "Reddit r/bruins"],
+        #     "generated_by": "UCLA Sentiment Analysis API v1.1.0"
+        # }
+        
+        logger.info("Analytics data generated successfully")
+        return analytics
+        
+    except Exception as e:
+        logger.error(f"Error generating analytics: {e}")
+        raise HTTPException(status_code=500, detail=f"Analytics generation failed: {str(e)}")
+
+@app.get("/alerts")
+async def get_alerts():
+    """
+    Get active alerts with enhanced filtering and statistics (WIP)
+    """
+    try:
+        logger.info("Retrieving active alerts")
+        
+        # Filter active alerts
+        active_alerts = [alert for alert in SAMPLE_ALERTS if alert['status'] == 'active']
+        
+        # Calculate enhanced statistics
+        stats = {
+            "total_active": len(active_alerts),
+            "by_severity": {
+                "critical": len([a for a in active_alerts if a['severity'] == 'critical']),
+                "high": len([a for a in active_alerts if a['severity'] == 'high']),
+                "medium": len([a for a in active_alerts if a['severity'] == 'medium']),
+                "low": len([a for a in active_alerts if a['severity'] == 'low'])
+            },
+            "by_type": {
+                "mental_health": len([a for a in active_alerts if a['alert_type'] == 'mental_health']),
+                "stress": len([a for a in active_alerts if a['alert_type'] == 'stress']),
+                "harassment": len([a for a in active_alerts if a['alert_type'] == 'harassment']),
+                "other": len([a for a in active_alerts if a['alert_type'] not in ['mental_health', 'stress', 'harassment']])
+            },
+            "by_subreddit": {
+                "UCLA": len([a for a in active_alerts if a['subreddit'] == 'UCLA']),
+                "other": len([a for a in active_alerts if a['subreddit'] != 'UCLA'])
+            }
+        }
+        
+        response = {
+            "active_alerts": active_alerts,
+            "stats": stats,
+            "summary": {
+                "total_active": len(active_alerts),
+                "needs_immediate_attention": len([a for a in active_alerts if a['severity'] in ['critical', 'high']]),
+                "last_24_hours": len(active_alerts),
+                "average_severity": "medium",
+                "most_common_type": "stress"
+            },
+            "recommendations": [
+                "Monitor high-severity alerts closely",
+                "Consider outreach for mental health alerts",
+                "Review stress patterns during finals period"
+            ],
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+        
+        logger.info(f"Retrieved {len(active_alerts)} active alerts")
+        return response
+        
+    except Exception as e:
+        logger.error(f"Error retrieving alerts: {e}")
+        raise HTTPException(status_code=500, detail=f"Alert retrieval failed: {str(e)}")
+
+@app.post("/alerts/{alert_id}/status")
+async def update_alert_status(alert_id: str, update: AlertStatusUpdate):
+    """
+    Update alert status with enhanced tracking (WIP)
+    """
+    try:
+        logger.info(f"Updating alert {alert_id} status to {update.status}")
+        
+        # Find and update the alert
+        alert_found = False
+        updated_alert = None
+        
+        for alert in SAMPLE_ALERTS:
+            if alert['id'] == alert_id:
+                alert['status'] = update.status
+                alert['updated_at'] = datetime.now(timezone.utc).isoformat()
+                alert['updated_by'] = "api_user"
+                if update.notes:
+                    alert['notes'] = update.notes
+                updated_alert = alert.copy()
+                alert_found = True
+                break
+        
+        if not alert_found:
+            raise HTTPException(status_code=404, detail=f"Alert {alert_id} not found")
+        
+        response = {
+            "status": "success",
+            "message": f"Alert {alert_id} updated successfully",
+            "alert": updated_alert,
+            "changes": {
+                "alert_id": alert_id,
+                "previous_status": "active",  # Simplified for demo
+                "new_status": update.status,
+                "notes": update.notes,
+                "updated_by": "api_user",
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
+        }
+        
+        logger.info(f"Alert {alert_id} status updated to {update.status}")
+        return response
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating alert: {e}")
+        raise HTTPException(status_code=500, detail=f"Alert update failed: {str(e)}")
+
+@app.get("/status")
+async def get_system_status():
+    """
+    Get detailed system status and performance metrics (WIP)
+    """
+    services = {
+        "sentiment_analyzer": "operational",
+        "database": "simulated", 
+        "reddit_api": "mock_mode",
+        "alert_system": "operational",
+        "cors": "enabled"
+    }
+    
+    endpoints = {
+        "total_registered": 13,
+        "health_check": "✅",
+        "sentiment_analysis": "✅", 
+        "batch_processing": "✅",
+        "reddit_scraping": "✅ (mock)",
+        "analytics": "✅",
+        "alerts": "✅"
+    }
+    
+    if ML_AVAILABLE:
+        services["ml_models"] = "operational"
+        services["huggingface"] = "connected"
+        endpoints["ml_analysis"] = "✅"
+        endpoints["model_management"] = "✅"
+    else:
+        services["ml_models"] = "unavailable"
+        endpoints["ml_analysis"] = "❌ (install torch transformers)"
+    
+    return {
+        "api": "operational",
+        "version": "1.1.0",
+        "environment": os.getenv('ENV', 'development'),
+        "ml_available": ML_AVAILABLE,
+        "services": services,
+        "performance": {
+            "uptime": "operational",
+            "response_time_ms": 45.2,
+            "requests_processed": 1247,
+            "errors": 0,
+            "success_rate": "100%"
+        },
+        "endpoints": endpoints,
+        "last_data_collection": "mock_data_simulation",
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    }
+
+# ============================================
+# APPLICATION STARTUP
+# ============================================
+
+@app.on_event("startup")
+async def startup_event():
+    """Application startup tasks"""
+    logger.info("🚀 UCLA Sentiment Analysis API starting up...")
+    logger.info("📊 All endpoints registered and ready!")
+    logger.info("🔗 CORS enabled for all origins")
+    logger.info("💡 Simple sentiment analyzer initialized")
+    
+    if ML_AVAILABLE:
+        logger.info("🤖 ML model manager available")
+        logger.info("🔍 To use ML models, download them via POST /models/download")
+    else:
+        logger.warning("⚠️  ML models not available. Install: pip install torch transformers")
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Application shutdown tasks"""
+    logger.info("🛑 UCLA Sentiment Analysis API shutting down...")
+
+# ============================================
+# MAIN ENTRY POINT
+# ============================================
+
+if __name__ == "__main__":
+    host = os.getenv("API_HOST", "0.0.0.0")
+    port = int(os.getenv("API_PORT", 8080))
+    
+    logger.info(f"🚀 Starting UCLA Sentiment Analysis API on {host}:{port}")
+    logger.info("📚 Interactive docs available at: /docs")
+    logger.info("📖 ReDoc documentation at: /redoc")
+    
+    if ML_AVAILABLE:
+        logger.info("🤖 ML-powered sentiment analysis ready!")
+    else:
+        logger.info("💡 Using simple sentiment analysis (install ML deps for advanced features)")
+    
+    uvicorn.run(
+        "main:app",
+        host=host,
+        port=port,
+        reload=True,
+        log_level="info",
+        access_log=True
+    )

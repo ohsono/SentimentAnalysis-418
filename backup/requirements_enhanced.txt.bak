@@ -1,0 +1,53 @@
+# Core dependencies with enhanced failsafe features
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+pydantic>=2.4.0
+python-dotenv>=1.0.0
+
+# Database (PostgreSQL with async support)
+asyncpg>=0.29.0
+sqlalchemy[asyncio]>=2.0.23
+psycopg2-binary>=2.9.7
+
+# Sentiment analysis (VADER fallback)
+vaderSentiment>=3.3.2
+
+# HTTP client for failsafe LLM communication
+aiohttp>=3.9.0
+requests>=2.31.0
+
+# Data processing and validation
+pandas>=2.1.0
+numpy>=1.25.0
+pydantic-settings>=2.0.0
+
+# Background task processing
+celery[redis]>=5.3.0
+redis>=5.0.0
+
+# Monitoring and metrics
+prometheus-client>=0.18.0
+psutil>=5.9.0
+
+# Optional Reddit integration
+praw>=7.7.0
+
+# Development and testing
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+httpx>=0.25.0  # For testing async endpoints
+black>=23.0.0
+flake8>=6.0.0
+
+# Utilities
+click>=8.1.0
+rich>=13.0.0  # For beautiful console output
+tenacity>=8.2.0  # For retry logic
+
+# Security
+cryptography>=41.0.0
+python-multipart>=0.0.6
+
+# Optional visualization (for dashboard)
+streamlit>=1.28.0
+plotly>=5.17.0

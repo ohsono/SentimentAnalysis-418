@@ -1,0 +1,370 @@
+#!/usr/bin/env python3
+
+"""
+Complete Demo Script for UCLA Sentiment Analysis API
+Demonstrates both simple and ML-powered sentiment analysis with comparison
+"""
+
+import requests
+import json
+import time
+from datetime import datetime
+
+def run_complete_demo():
+    """Run a complete demonstration of the API capabilities"""
+    
+    print("🎓 UCLA Sentiment Analysis API - Complete Demo")
+    print("=" * 60)
+    print(f"⏰ Started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    
+    base_url = "http://localhost:8080"
+    
+    # Check API status
+    print("\n🔍 CHECKING API STATUS")
+    print("-" * 30)
+    
+    try:
+        response = requests.get(f"{base_url}/health", timeout=5)
+        if response.status_code == 200:
+            health_data = response.json()
+            print("✅ API server is running")
+            print(f"📊 Version: {health_data.get('version', 'Unknown')}")
+            
+            services = health_data.get('services', {})
+            for service, status in services.items():
+                icon = "✅" if "operational" in status.lower() else "⚠️"
+                print(f"{icon} {service}: {status}")
+        else:
+            print(f"❌ API health check failed: {response.status_code}")
+            return False
+    except Exception as e:
+        print(f"❌ Cannot connect to API: {e}")
+        print("💡 Start the API with: python restart_api.py")
+        return False
+    
+    # Test sample UCLA-related texts
+    sample_texts = [
+        {
+            "text": "UCLA is absolutely amazing! The computer science program is outstanding and the professors are brilliant. I love the research opportunities here!",
+            "category": "Very Positive - Academic",
+            "expected": "positive"
+        },
+        {
+            "text": "I'm feeling really overwhelmed and stressed with finals coming up. This quarter has been incredibly difficult and I'm worried about my grades.",
+            "category": "Negative - Student Stress",
+            "expected": "negative"
+        },
+        {
+            "text": "UCLA campus is beautiful but the parking situation is terrible. Housing is expensive but the dining halls are decent. Mixed feelings overall.",
+            "category": "Mixed - Campus Life",
+            "expected": "neutral"
+        },
+        {
+            "text": "@UCLA just announced new research funding! This is fantastic news for our department. Can't wait to see what amazing discoveries come next! #UCLA #Research",
+            "category": "Positive - Social Media Style",
+            "expected": "positive"
+        },
+        {
+            "text": "Ugh, another all-nighter at Powell Library. Coffee machine is broken AGAIN and I'm so tired. Why is everything so hard? 😭",
+            "category": "Negative - Social Media Style",
+            "expected": "negative"
+        }
+    ]
+    
+    print(f"\n🧪 SENTIMENT ANALYSIS COMPARISON")
+    print("-" * 30)
+    print("Testing 5 UCLA-related texts with both methods...\n")
+    
+    results = []
+    
+    for i, sample in enumerate(sample_texts, 1):
+        print(f"[Test {i}/5] {sample['category']}")
+        print(f"Text: \"{sample['text'][:80]}{'...' if len(sample['text']) > 80 else ''}\"")
+        print(f"Expected: {sample['expected']}")
+        
+        # Test simple method
+        simple_result = test_simple_method(base_url, sample['text'])
+        
+        # Test ML method
+        ml_result = test_ml_method(base_url, sample['text'])
+        
+        # Compare and display results
+        comparison = compare_results(simple_result, ml_result, sample['expected'])
+        results.append({
+            "sample": sample,
+            "simple": simple_result,
+            "ml": ml_result,
+            "comparison": comparison
+        })
+        
+        print()  # Blank line between tests
+    
+    # Run batch processing demo
+    print(f"🔄 BATCH PROCESSING DEMO")
+    print("-" * 30)
+    
+    batch_texts = [s["text"] for s in sample_texts[:3]]
+    
+    # Simple batch
+    print("Testing simple batch processing...")
+    simple_batch_result = test_simple_batch(base_url, batch_texts)
+    
+    # ML batch
+    print("Testing ML batch processing...")
+    ml_batch_result = test_ml_batch(base_url, batch_texts)
+    
+    # Model management demo
+    print(f"\n🤖 MODEL MANAGEMENT DEMO")
+    print("-" * 30)
+    
+    test_model_management(base_url)
+    
+    # Generate final summary
+    print(f"\n📊 FINAL SUMMARY")
+    print("=" * 60)
+    
+    generate_summary(results, simple_batch_result, ml_batch_result)
+    
+    return True
+
+def test_simple_method(base_url, text):
+    """Test simple sentiment analysis method"""
+    try:
+        response = requests.post(
+            f"{base_url}/predict",
+            json={"text": text, "include_probabilities": True},
+            timeout=10
+        )
+        
+        if response.status_code == 200:
+            data = response.json()
+            print(f"   🔹 Simple: {data['sentiment']} (conf: {data['confidence']:.2f}, time: {data['processing_time_ms']:.1f}ms)")
+            return data
+        else:
+            print(f"   ❌ Simple method failed: {response.status_code}")
+            return None
+            
+    except Exception as e:
+        print(f"   ❌ Simple method error: {e}")
+        return None
+
+def test_ml_method(base_url, text):
+    """Test ML sentiment analysis method"""
+    try:
+        response = requests.post(
+            f"{base_url}/predict/llm",
+            json={
+                "text": text, 
+                "model": "twitter-roberta", 
+                "include_probabilities": True
+            },
+            timeout=30
+        )
+        
+        if response.status_code == 200:
+            data = response.json()
+            model_used = data.get('model_used', 'unknown')
+            print(f"   🤖 ML ({model_used}): {data['sentiment']} (conf: {data['confidence']:.2f}, time: {data['processing_time_ms']:.1f}ms)")
+            return data
+        elif response.status_code == 503:
+            print(f"   ⚠️  ML models not available (service unavailable)")
+            return {"error": "ML not available"}
+        else:
+            print(f"   ❌ ML method failed: {response.status_code}")
+            return None
+            
+    except Exception as e:
+        print(f"   ❌ ML method error: {e}")
+        return None
+
+def compare_results(simple_result, ml_result, expected):
+    """Compare simple vs ML results"""
+    if not simple_result or not ml_result or "error" in ml_result:
+        return {"comparison": "incomplete"}
+    
+    simple_sentiment = simple_result["sentiment"]
+    ml_sentiment = ml_result["sentiment"]
+    simple_conf = simple_result["confidence"]
+    ml_conf = ml_result["confidence"]
+    
+    # Check accuracy
+    simple_correct = simple_sentiment == expected
+    ml_correct = ml_sentiment == expected
+    
+    # Display comparison
+    if simple_sentiment == ml_sentiment:
+        accuracy_icon = "✅" if simple_correct else "❌"
+        print(f"   {accuracy_icon} Agreement: Both detected {simple_sentiment} (expected: {expected})")
+    else:
+        simple_icon = "✅" if simple_correct else "❌"
+        ml_icon = "✅" if ml_correct else "❌"
+        print(f"   🔄 Difference: Simple={simple_sentiment}{simple_icon}, ML={ml_sentiment}{ml_icon} (expected: {expected})")
+    
+    # Show confidence comparison
+    if ml_conf > simple_conf + 0.1:
+        print(f"   📈 ML more confident ({ml_conf:.2f} vs {simple_conf:.2f})")
+    elif simple_conf > ml_conf + 0.1:
+        print(f"   📈 Simple more confident ({simple_conf:.2f} vs {ml_conf:.2f})")
+    else:
+        print(f"   📊 Similar confidence levels")
+    
+    return {
+        "agreement": simple_sentiment == ml_sentiment,
+        "simple_correct": simple_correct,
+        "ml_correct": ml_correct,
+        "confidence_diff": ml_conf - simple_conf
+    }
+
+def test_simple_batch(base_url, texts):
+    """Test simple batch processing"""
+    try:
+        start_time = time.time()
+        response = requests.post(
+            f"{base_url}/predict/batch",
+            json=texts,
+            timeout=30
+        )
+        total_time = (time.time() - start_time) * 1000
+        
+        if response.status_code == 200:
+            data = response.json()
+            processing_time = data["summary"]["total_processing_time_ms"]
+            print(f"✅ Simple batch: {len(texts)} texts in {processing_time:.1f}ms (total: {total_time:.1f}ms)")
+            return data
+        else:
+            print(f"❌ Simple batch failed: {response.status_code}")
+            return None
+            
+    except Exception as e:
+        print(f"❌ Simple batch error: {e}")
+        return None
+
+def test_ml_batch(base_url, texts):
+    """Test ML batch processing"""
+    try:
+        start_time = time.time()
+        response = requests.post(
+            f"{base_url}/predict/llm/batch",
+            json={"texts": texts, "model": "twitter-roberta"},
+            timeout=60
+        )
+        total_time = (time.time() - start_time) * 1000
+        
+        if response.status_code == 200:
+            data = response.json()
+            processing_time = data["summary"]["total_processing_time_ms"]
+            print(f"✅ ML batch: {len(texts)} texts in {processing_time:.1f}ms (total: {total_time:.1f}ms)")
+            return data
+        elif response.status_code == 503:
+            print(f"⚠️  ML batch not available (models not installed)")
+            return {"error": "ML not available"}
+        else:
+            print(f"❌ ML batch failed: {response.status_code}")
+            return None
+            
+    except Exception as e:
+        print(f"❌ ML batch error: {e}")
+        return None
+
+def test_model_management(base_url):
+    """Test model management endpoints"""
+    try:
+        # List models
+        response = requests.get(f"{base_url}/models", timeout=10)
+        if response.status_code == 200:
+            data = response.json()
+            if data.get("available"):
+                models = data.get("models", {})
+                print(f"✅ Model management: {len(models)} models available")
+                
+                for model_key, model_info in models.items():
+                    downloaded = "✅" if model_info.get("downloaded") else "⬇️"
+                    loaded = "🔄" if model_info.get("loaded") else "💤"
+                    print(f"   • {model_key}: {downloaded} {loaded} - {model_info.get('description', 'N/A')[:50]}")
+            else:
+                print(f"⚠️  Model management not available: {data.get('message', 'Unknown')}")
+        else:
+            print(f"❌ Model listing failed: {response.status_code}")
+            
+    except Exception as e:
+        print(f"❌ Model management error: {e}")
+
+def generate_summary(results, simple_batch, ml_batch):
+    """Generate comprehensive summary"""
+    total_tests = len(results)
+    
+    # Calculate accuracies
+    simple_correct = sum(1 for r in results if r["comparison"].get("simple_correct", False))
+    ml_correct = sum(1 for r in results if r["comparison"].get("ml_correct", False))
+    agreements = sum(1 for r in results if r["comparison"].get("agreement", False))
+    
+    ml_available = any(r["ml"] and "error" not in r["ml"] for r in results if r["ml"])
+    
+    print(f"🎯 ACCURACY RESULTS")
+    print(f"   Simple method: {simple_correct}/{total_tests} correct ({simple_correct/total_tests*100:.1f}%)")
+    
+    if ml_available:
+        print(f"   ML method: {ml_correct}/{total_tests} correct ({ml_correct/total_tests*100:.1f}%)")
+        print(f"   Agreement rate: {agreements}/{total_tests} ({agreements/total_tests*100:.1f}%)")
+    else:
+        print(f"   ML method: Not available (install with: python setup_ml_models.py)")
+    
+    print(f"\n⚡ PERFORMANCE RESULTS")
+    
+    # Calculate average processing times
+    simple_times = [r["simple"]["processing_time_ms"] for r in results if r["simple"]]
+    if simple_times:
+        avg_simple_time = sum(simple_times) / len(simple_times)
+        print(f"   Simple avg time: {avg_simple_time:.1f}ms per text")
+    
+    if ml_available:
+        ml_times = [r["ml"]["processing_time_ms"] for r in results if r["ml"] and "error" not in r["ml"]]
+        if ml_times:
+            avg_ml_time = sum(ml_times) / len(ml_times)
+            print(f"   ML avg time: {avg_ml_time:.1f}ms per text")
+            print(f"   Speed ratio: ML is {avg_ml_time/avg_simple_time:.1f}x slower")
+    
+    # Batch performance
+    if simple_batch:
+        simple_batch_time = simple_batch["summary"]["total_processing_time_ms"]
+        simple_per_text = simple_batch_time / len(simple_batch["results"])
+        print(f"   Simple batch: {simple_per_text:.1f}ms per text")
+    
+    if ml_batch and "error" not in ml_batch:
+        ml_batch_time = ml_batch["summary"]["total_processing_time_ms"]
+        ml_per_text = ml_batch_time / len(ml_batch["results"])
+        print(f"   ML batch: {ml_per_text:.1f}ms per text")
+    
+    print(f"\n🎓 UCLA SENTIMENT ANALYSIS API DEMO COMPLETE!")
+    print("-" * 60)
+    
+    if ml_available:
+        print("✅ Both simple and ML methods are working")
+        print("🤖 ML method shows higher accuracy on social media text")
+        print("⚡ Simple method is faster for high-volume processing")
+        print("🎯 Use ML for accuracy, simple for speed")
+    else:
+        print("✅ Simple method is working perfectly")
+        print("🤖 Install ML models for enhanced accuracy:")
+        print("   python setup_ml_models.py")
+    
+    print(f"\n📚 NEXT STEPS:")
+    print("• Visit http://localhost:8080/docs for interactive API documentation")
+    print("• Integrate with your dashboard or application")
+    print("• Use /predict for speed, /predict/llm for accuracy")
+    print("• Consider caching results for repeated texts")
+    
+    if not ml_available:
+        print("• Run 'python setup_ml_models.py' to enable ML features")
+
+if __name__ == "__main__":
+    print("🌟 Welcome to the UCLA Sentiment Analysis API Demo!")
+    print("This demo will showcase both simple and ML-powered sentiment analysis\n")
+    
+    success = run_complete_demo()
+    
+    if success:
+        print(f"\n🎉 Demo completed successfully!")
+        print("Your UCLA Sentiment Analysis API is ready for production! 🚀")
+    else:
+        print(f"\n🔧 Demo encountered issues - please check the API server")

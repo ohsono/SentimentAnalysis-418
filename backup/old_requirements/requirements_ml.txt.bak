@@ -1,0 +1,26 @@
+# Enhanced requirements for UCLA Sentiment Analysis API with ML models
+# Core FastAPI dependencies
+fastapi>=0.100.0
+uvicorn[standard]>=0.20.0
+pydantic>=2.0.0
+
+# Basic utilities
+requests>=2.28.0
+python-dotenv>=1.0.0
+
+# ML and NLP dependencies
+torch>=2.0.0
+transformers>=4.30.0
+tokenizers>=0.13.0
+accelerate>=0.20.0
+safetensors>=0.3.0
+
+# Data processing
+numpy>=1.24.0
+pandas>=2.0.0
+
+# Optional enhancements
+# vaderSentiment>=3.3.0
+# praw>=7.7.0
+# streamlit>=1.25.0
+# plotly>=5.15.0

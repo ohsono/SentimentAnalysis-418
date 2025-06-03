@@ -1,0 +1,54 @@
+FROM python:3.11-slim
+
+LABEL maintainer="ohsono@gmail.com"
+LABEL description="Model Service API"
+LABEL version="1.0.0"
+
+WORKDIR /app
+
+# Set environment variables
+ENV PYTHONPATH=/app
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+
+# Install minimal system dependencies
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        gcc \
+        g++ && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# Copy only the requirements first (for better caching)
+COPY requirements_model_service_minimal.txt .
+
+# Install Python dependencies
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements_model_service_minimal.txt
+
+# Create model cache directory
+RUN mkdir -p /app/models /app/logs
+
+# Copy only the necessary application code
+COPY model_services/ ./model_services/
+COPY app/utils/ ./app/utils/
+
+# Create non-root user
+RUN groupadd -r model_user && useradd -r -g model_user model_user && \
+    chown -R model_user:model_user /app
+
+USER model_user
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=90s --retries=3 \
+    CMD curl -f http://localhost:8081/health || exit 1
+
+# Expose port
+EXPOSE 8081
+
+# Create entrypoint script
+RUN echo '#!/bin/bash\ncd /app\nuvicorn model_services.model_service:app --host 0.0.0.0 --port 8081' > /app/entrypoint.sh && \
+    chmod +x /app/entrypoint.sh
+
+# Run the API with the correct entrypoint
+CMD ["/app/entrypoint.sh"]
