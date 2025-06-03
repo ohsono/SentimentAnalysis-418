@@ -7,7 +7,7 @@ uvicorn[standard]>=0.24.0
 pydantic>=2.4.0
 
 # Essential ML libraries
-torch>=2.0.0,<2.2.0
+torch>=2.0.0,<2.8.0
 transformers>=4.35.0
 tokenizers>=0.14.0
 # Note: torchaudio commented out - only needed for audio models

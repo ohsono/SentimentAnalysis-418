@@ -7,8 +7,8 @@ uvicorn[standard]==0.24.0
 pydantic==2.5.0
 
 # Machine Learning - Lightweight
-torch==2.1.0+cpu --index-url https://download.pytorch.org/whl/cpu
-transformers==4.35.2
+torch==2.7.0 --index-url https://download.pytorch.org/whl/cpu
+transformers==4.50.0
 tokenizers==0.15.0
 
 # Text processing
