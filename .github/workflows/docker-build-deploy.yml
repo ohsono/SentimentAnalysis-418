@@ -62,7 +62,7 @@ jobs:
           DOCKERFILE="${{ github.event.inputs.dockerfile }}"
         else
           # For automatic triggers, default to dashboard
-          DOCKERFILE="Dockerfile.dashboard"
+          DOCKERFILE="Dockerfile.gateway-api"
         fi
         
         echo "dockerfile=${DOCKERFILE}" >> $GITHUB_OUTPUT
