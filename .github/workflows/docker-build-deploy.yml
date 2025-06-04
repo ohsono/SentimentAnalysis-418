@@ -24,7 +24,7 @@ on:
           - Dockerfile.dashboard-service
           - Dockerfile.gateway-api-service
           - Dockerfile.model-service
-          - Dockerfile.model-service-distillbert
+          - Dockerfile.model-service-distilbert
           - Dockerfile.worker-scraper-service
       image_name:
         description: 'Docker image name'
@@ -35,7 +35,7 @@ on:
           - dashboard-service
           - gateway-api-service
           - model-service
-          - model-service-distillbert
+          - model-service-distilbert
           - worker-scraper-service
       tag:
         description: 'Custom tag for the image'
