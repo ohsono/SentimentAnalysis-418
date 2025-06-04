@@ -37,17 +37,41 @@ show_usage() {
 build_services() {
     echo -e "${BLUE}Building all services...${NC}"
     find . -name '._*' -delete
-    echo -e "${YELLOW}Building gateway-api...${NC}"
-    docker build -t ucla/gateway-api -f Dockerfile.gateway-api .
+    echo -e "${YELLOW}Building gateway-api-service...${NC}"
+    #docker build -t ohsonoresearch/gateway-api-service -f Dockerfile.gateway-api .
+    act workflow_dispatch \
+        --secret-file .secrets \
+        -P ubuntu-latest=catthehacker/ubuntu:act-latest \
+        --input dockerfile=Dockerfile.gateway-api-service \
+        --input image_name=gateway-api-service \
+        --input local_test=true
     
-    echo -e "${YELLOW}Building model-service-api...${NC}"
-    docker build -t ucla/model-service-api -f Dockerfile.model-service .
+    echo -e "${YELLOW}Building model-service...${NC}"
+    #docker build -t ohsonoresearch/model-service -f Dockerfile.model-service .
+    act workflow_dispatch \
+        --secret-file .secrets \
+        -P ubuntu-latest=catthehacker/ubuntu:act-latest \
+        --input dockerfile=Dockerfile.model-service \
+        --input image_name=model-service \
+        --input local_test=true
     
-    echo -e "${YELLOW}Building worker-scraper-api...${NC}"
-    docker build -t ucla/worker-scraper-api -f Dockerfile.worker .
+    echo -e "${YELLOW}Building worker-scraper-service...${NC}"
+    #docker build -t ohsonoresearch/worker-scraper-service -f Dockerfile.worker-scraper-service .
+    act workflow_dispatch \
+        --secret-file .secrets \
+        -P ubuntu-latest=catthehacker/ubuntu:act-latest \
+        --input dockerfile=Dockerfile.worker-scraper-service \
+        --input image_name=worker-scraper-service \
+        --input local_test=true
     
     echo -e "${YELLOW}Building dashboard-service...${NC}"
-    docker build -t ucla/dashboard-service -f Dockerfile.dashboard .
+    #docker build -t ohsonoresearch/dashboard-service -f Dockerfile.dashboard-service .
+    act workflow_dispatch \
+        --secret-file .secrets \
+        -P ubuntu-latest=catthehacker/ubuntu:act-latest \
+        --input dockerfile=Dockerfile.dashboard-service \
+        --input image_name=dashboard-service \
+        --input local_test=true
     
     echo -e "${GREEN}All services built successfully!${NC}"
 }
@@ -92,23 +116,23 @@ view_service_logs() {
     service="$1"
     
     case "$service" in
-        "gateway-api")
-            container="ucla_gateway_api"
+        "gateway-api-service")
+            container="gateway_api_service"
             ;;
-        "model-service-api")
-            container="ucla_model_service"
+        "model-service")
+            container="model_service"
             ;;
-        "worker-scraper-api")
-            container="ucla_worker_service"
+        "worker-scraper-service")
+            container="worker_scraper_service"
             ;;
         "dashboard-service")
-            container="ucla_dashboard"
+            container="dashboard_service"
             ;;
         "postgres")
-            container="ucla_sentiment_db"
+            container="sentiment_db"
             ;;
         "redis")
-            container="ucla_sentiment_redis"
+            container="sentiment_redis"
             ;;
         *)
             echo -e "${RED}Invalid service name: $service${NC}"
@@ -133,10 +157,10 @@ clean_services() {
     docker-compose down
     
     echo -e "${YELLOW}Removing all service containers...${NC}"
-    docker rm -f ucla_gateway_api ucla_model_service ucla_worker_service ucla_dashboard ucla_sentiment_db ucla_sentiment_redis 2>/dev/null || true
+    docker rm -f gateway_api_service model_service worker_scraper_service dashboard_sevice sentiment_db sentiment_redis 2>/dev/null
     
     echo -e "${YELLOW}Removing all service images...${NC}"
-    docker rmi ucla/gateway-api ucla/model-service-api ucla/worker-scraper-api ucla/dashboard-service 2>/dev/null || true
+    docker rmi gateway-api-service model-service-api-service worker-scraper-servoce dashboard-service 2>/dev/null || true
     
     echo -e "${YELLOW}Pruning unused volumes...${NC}"
     docker volume prune -f

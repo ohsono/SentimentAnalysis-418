@@ -31,19 +31,18 @@ RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements_model_service_distilbert.txt
 
 # Pre-download DistilBERT model to speed up startup
-RUN python -c "
-from transformers import pipeline, AutoTokenizer, AutoModelForSequenceClassification
-import os
-print('Pre-downloading DistilBERT model...')
-cache_dir = '/app/models/distilbert-sentiment'
-os.makedirs(cache_dir, exist_ok=True)
-# Download the default sentiment analysis model
-pipeline('sentiment-analysis', 
-         model='distilbert-base-uncased-finetuned-sst-2-english',
-         cache_dir=cache_dir,
-         return_all_scores=True)
-print('DistilBERT model pre-downloaded successfully!')
-"
+# RUN python -c "
+# from transformers import pipeline, AutoTokenizer, AutoModelForSequenceClassification
+# import os
+# print('Pre-downloading DistilBERT model...')
+# cache_dir = '/app/models/distilbert-sentiment'
+# os.makedirs(cache_dir, exist_ok=True)
+# # Download the default sentiment analysis model
+# pipeline('sentiment-analysis', 
+#          model='distilbert-base-uncased-finetuned-sst-2-english',
+#          cache_dir=cache_dir,
+#          return_all_scores=True)
+# print('DistilBERT model pre-downloaded successfully!')"
 
 # Create necessary directories
 RUN mkdir -p /app/models /app/logs
