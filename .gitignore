@@ -4,6 +4,10 @@
 # Rsync
 ._*
 
+
+# backup foler
+backup/*
+
 # app
 .github
 .streamlit
