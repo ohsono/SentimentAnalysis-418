@@ -30,6 +30,13 @@ on:
         description: 'Docker image name'
         required: true
         default: 'sentiment-analysis-service'
+        type: choice
+        options:
+          - dashboard-service
+          - gateway-api-service
+          - model-service
+          - model-service-distillbert
+          - worker-scraper-service
       tag:
         description: 'Custom tag for the image'
         required: false
