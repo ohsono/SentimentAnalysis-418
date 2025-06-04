@@ -156,7 +156,7 @@ jobs:
     
     steps:
     - name: Run Trivy vulnerability scanner
-      uses: aquasecurity/trivy-action@v0.31.0
+      uses: aquasecurity/trivy-action@0.31.0
       with:
         image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_ORG }}/${{ github.event.inputs.image_name || 'sentiment-analysis-service' }}:latest
         format: 'sarif'
