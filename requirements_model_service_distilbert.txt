@@ -23,6 +23,8 @@ aiofiles==23.2.1
 # Monitoring
 psutil==5.9.6
 
+nltk==3.9.1
+
 # Optional: ONNX for even faster inference (uncomment if needed)
 # onnxruntime==1.16.3
 # optimum==1.14.1
