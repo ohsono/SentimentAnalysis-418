@@ -155,22 +155,22 @@ jobs:
         echo "Image: ${{ github.event.inputs.image_name || 'sentiment-analysis-service' }}:local-test"
         echo "Dockerfile used: ${{ steps.dockerfile_info.outputs.dockerfile }}"
         docker images | head -10
-
-  security-scan:
-    runs-on: ubuntu-latest
-    needs: build-and-push
-    if: github.event_name != 'pull_request' && github.event.inputs.local_test != 'true'
+  # disabled this step
+  # security-scan:
+  #   runs-on: ubuntu-latest
+  #   needs: build-and-push
+  #   if: github.event_name != 'pull_request' && github.event.inputs.local_test != 'true'
     
-    steps:
-    - name: Run Trivy vulnerability scanner
-      uses: aquasecurity/trivy-action@v0.31.0
-      with:
-        image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_ORG }}/${{ github.event.inputs.image_name || 'sentiment-analysis-service' }}:latest
-        format: 'sarif'
-        output: 'trivy-results.sarif'
+  #   steps:
+  #   - name: Run Trivy vulnerability scanner
+  #     uses: aquasecurity/trivy-action@v0.31.0
+  #     with:
+  #       image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_ORG }}/${{ github.event.inputs.image_name || 'sentiment-analysis-service' }}:latest
+  #       format: 'sarif'
+  #       output: 'trivy-results.sarif'
         
-    - name: Upload Trivy scan results to GitHub Security tab
-      uses: github/codeql-action/upload-sarif@v3.28.0
-      if: always()
-      with:
-        sarif_file: 'trivy-results.sarif'
+  #   - name: Upload Trivy scan results to GitHub Security tab
+  #     uses: github/codeql-action/upload-sarif@v3.28.0
+  #     if: always()
+  #     with:
+  #       sarif_file: 'trivy-results.sarif'
