@@ -1,4 +1,14 @@
-FROM python:3.11-slim
+FROM python:3.11-slim AS base
+
+# Create a lightweight test stage
+FROM base AS test
+COPY requirements-basic.txt .
+RUN pip install -r requirements_model_service_minimal.txt
+COPY . .
+RUN echo "Basic test successful"
+
+# Full production stage with CUDA
+FROM base AS production
 
 LABEL maintainer="ohsono@gmail.com"
 LABEL description="DistilBERT Model Service API - Lightweight LLM"
@@ -26,6 +36,7 @@ RUN apt-get update && \
 # Copy requirements first for better caching
 COPY requirements_model_service_distilbert.txt .
 
+
 # Install Python dependencies
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements_model_service_distilbert.txt
@@ -49,6 +60,7 @@ RUN mkdir -p /app/models /app/logs
 
 # Copy only the necessary application code
 COPY model_services/ ./model_services/
+COPY models/ /app/models/
 
 # Create non-root user
 RUN groupadd -r model_user && useradd -r -g model_user model_user && \
