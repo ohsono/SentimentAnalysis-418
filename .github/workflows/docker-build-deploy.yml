@@ -3,10 +3,8 @@ name: Build and Push Docker Image
 on:
   push:
     branches:
-      - main
       - staging
       - dev
-      - feature-*
       - test-*
     tags:
       - 'v*'
@@ -29,7 +27,7 @@ on:
       image_name:
         description: 'Docker image name'
         required: true
-        default: 'sentiment-analysis-service'
+        default: 'gateway-api-service'
         type: choice
         options:
           - dashboard-service
