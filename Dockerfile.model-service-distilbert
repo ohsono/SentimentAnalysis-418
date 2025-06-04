@@ -64,4 +64,5 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 \
 EXPOSE 8081
 
 # Run the DistilBERT service
-CMD ["uvicorn", "model_services.distilbert_service:app", "--host", "0.0.0.0", "--port", "8081"]
+#CMD ["uvicorn", "model_services.distilbert_service:app", "--host", "0.0.0.0", "--port", "8081"]
+CMD ["gunicorn", "model_services.distilbert_service:app", "--host", "0.0.0.0", "--port", "8081"]
