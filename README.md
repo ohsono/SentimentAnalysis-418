@@ -1,4 +1,4 @@
-# SocialScienceLLM 🧠
+# Sentiment Analysis 🧠
 
 **Advanced Social Sentiment Analysis with Enterprise Microservices Architecture**
 
@@ -933,8 +933,8 @@ This project demonstrates **enterprise-grade software engineering** with signifi
 ### **Development Workflow**
 ```bash
 # 1. Fork and clone
-git clone https://github.com/yourusername/SocialScienceLLM.git
-cd SocialScienceLLM
+git clone https://github.com/yourusername/Sentiment Analysis.git
+cd Sentiment Analysis
 
 # 2. Create feature branch
 git checkout -b feature/your-feature-name
