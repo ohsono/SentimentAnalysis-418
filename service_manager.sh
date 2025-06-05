@@ -18,23 +18,24 @@ echo -e "${BLUE}============================================${NC}"
 show_usage() {
     echo -e "\nUsage: $0 [command]"
     echo -e "\nAvailable commands:"
-    echo -e "  ${GREEN}build${NC}        - Build all Docker images"
+    echo -e "  ${GREEN}build-all${NC}    - Build all Docker images"
     echo -e "  ${GREEN}start${NC}        - Start all services"
     echo -e "  ${GREEN}stop${NC}         - Stop all services"
     echo -e "  ${GREEN}restart${NC}      - Restart all services"
     echo -e "  ${GREEN}status${NC}       - Check status of all services"
+    echo -e "  ${GREEN}push-all${NC}     - push all services to the github repo"
     echo -e "  ${GREEN}logs [service]${NC} - View logs for a specific service"
     echo -e "  ${GREEN}test${NC}         - Run tests against running services"
     echo -e "  ${GREEN}clean${NC}        - Remove all containers and images"
     echo -e "  ${GREEN}help${NC}         - Display this help message"
     echo
     echo -e "Available services for logs command:"
-    echo -e "  ${YELLOW}gateway-api${NC}, ${YELLOW}model-service-api${NC}, ${YELLOW}worker-scraper-api${NC}, ${YELLOW}dashboard-service${NC}, ${YELLOW}postgres${NC}, ${YELLOW}redis${NC}"
+    echo -e "  ${YELLOW}gateway-api-service${NC}, ${YELLOW}model-service${NC}, ${YELLOW}worker-scraper-service${NC}, ${YELLOW}dashboard-service${NC}, ${YELLOW}postgres${NC}, ${YELLOW}redis${NC}"
     echo
 }
 
 # Function to build all Docker images
-build_services() {
+build_all_services() {
     echo -e "${BLUE}Building all services...${NC}"
     find . -name '._*' -delete
     echo -e "${YELLOW}Building gateway-api-service...${NC}"
@@ -43,8 +44,9 @@ build_services() {
         --secret-file .secrets \
         -P ubuntu-latest=catthehacker/ubuntu:act-latest \
         --input dockerfile=Dockerfile.gateway-api-service \
-        --input image_name=gateway-api-service \
-        --input local_test=true
+        --input image_name=gateway-api-service 
+
+    docker tag gateway-api-service ohsonoresearch/gateway-api-service:latest
     
     echo -e "${YELLOW}Building model-service...${NC}"
     #docker build -t ohsonoresearch/model-service -f Dockerfile.model-service .
@@ -52,26 +54,29 @@ build_services() {
         --secret-file .secrets \
         -P ubuntu-latest=catthehacker/ubuntu:act-latest \
         --input dockerfile=Dockerfile.model-service \
-        --input image_name=model-service \
-        --input local_test=true
-    
+        --input image_name=model-service
+
+    docker tag model-service ohsonoresearch/model-service:latest
+
     echo -e "${YELLOW}Building worker-scraper-service...${NC}"
     #docker build -t ohsonoresearch/worker-scraper-service -f Dockerfile.worker-scraper-service .
     act workflow_dispatch \
         --secret-file .secrets \
         -P ubuntu-latest=catthehacker/ubuntu:act-latest \
         --input dockerfile=Dockerfile.worker-scraper-service \
-        --input image_name=worker-scraper-service \
-        --input local_test=true
-    
+        --input image_name=worker-scraper-service
+
+    docker tag worker-scraper-service ohsonoresearch/worker-scraper-service:latest
+
     echo -e "${YELLOW}Building dashboard-service...${NC}"
     #docker build -t ohsonoresearch/dashboard-service -f Dockerfile.dashboard-service .
     act workflow_dispatch \
         --secret-file .secrets \
         -P ubuntu-latest=catthehacker/ubuntu:act-latest \
         --input dockerfile=Dockerfile.dashboard-service \
-        --input image_name=dashboard-service \
-        --input local_test=true
+        --input image_name=dashboard-service
+    
+    docker tag dashboard-service ohsonoresearch/dashboard-service:latest
     
     echo -e "${GREEN}All services built successfully!${NC}"
 }
@@ -110,6 +115,19 @@ check_services_status() {
     echo -e "${BLUE}Checking status of all services...${NC}"
     docker-compose ps
 }
+
+push_all_services() {
+    echo -e "${BLUE}push to github for all services...${NC}"
+    docker push ohsonoresearch/dashboard-service:latest
+    docker push ohsonoresearch/gateway-api-service:latest
+    docker push ohsonoresearch/worker-scrap-service:latest
+    docker push ohsonoresearch/model-service:latest
+    docker push ohsonoresearch/model-service-distilbert:latest
+
+    echo -e "${YELLOW}push for all services ...${NC}"
+    sleep 5
+}
+
 
 # Function to view logs for a specific service
 view_service_logs() {
@@ -177,8 +195,8 @@ fi
 command="$1"
 
 case "$command" in
-    "build")
-        build_services
+    "build-all")
+        build_all_services
         ;;
     "start")
         start_services
@@ -191,6 +209,9 @@ case "$command" in
         ;;
     "status")
         check_services_status
+        ;;
+    "push-all")
+        push_all_services
         ;;
     "logs")
         if [ $# -lt 2 ]; then
