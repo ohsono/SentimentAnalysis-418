@@ -54,4 +54,6 @@ streamlit>=1.28.0
 plotly>=5.17.0
 
 # emoji
-demoji
+demoji==1.1.0
+
+nltk==3.9.1

@@ -30,6 +30,12 @@ RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements_enhanced.txt && \
     pip install --no-cache-dir streamlit plotly redis
 
+RUN pip3 install --no-cache-dir --upgrade pip3 && \
+    pip3 install --no-cache-dir -r requirements_enhanced.txt && \
+    pip3 install --no-cache-dir streamlit plotly redis
+
+
+
 # Create necessary directories and ensure they're writable
 RUN mkdir -p /tmp/streamlit /app/logs && \
     chmod -R 777 /tmp/streamlit /app/logs

@@ -20,11 +20,15 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 # Copy only the requirements first (for better caching)
-COPY requirements_enhanced.txt .
+COPY requirements_worker_scraper_minimal.txt .
 
 # Install Python dependencies
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements_enhanced.txt
+    pip install --no-cache-dir -r requirements_worker_scraper_minimal.txt
+
+RUN pip3 install --no-cache-dir --upgrade pip3 && \
+    pip3 install --no-cache-dir -r requirements_worker_scraper_minimal.txt
+
 
 # Download NLTK data
 RUN python -c "import nltk; nltk.download('vader_lexicon', quiet=True); nltk.download('punkt', quiet=True)"

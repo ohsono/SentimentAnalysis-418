@@ -68,6 +68,17 @@ build_all_services() {
     #     --input dockerfile=Dockerfile.model-service \
     #     --input image_name=model-service
 
+    echo -e "${YELLOW}Building model-service-distilbert...${NC}"
+    cleanup
+    docker build -t ohsonoresearch/model-service-distilbert -f Dockerfile.model-service-distilbert .
+    docker tag dashboard-service ohsonoresearch/model-service-distilbert:latest
+    # act workflow_dispatch \
+    #     --secret-file .secrets \
+    #     -P ubuntu-latest=catthehacker/ubuntu:act-latest \
+    #     --input dockerfile=Dockerfile.model-service \
+    #     --input image_name=model-service
+
+
 
     echo -e "${YELLOW}Building worker-scraper-service...${NC}"
     cleanup
@@ -80,8 +91,8 @@ build_all_services() {
     #     --input dockerfile=Dockerfile.worker-scraper-service \
     #     --input image_name=worker-scraper-service
 
-
     echo -e "${YELLOW}Building dashboard-service...${NC}"
+    cleanup
     docker build -t ohsonoresearch/dashboard-service -f Dockerfile.dashboard-service .
     docker tag dashboard-service ohsonoresearch/dashboard-service:latest
 
@@ -90,7 +101,6 @@ build_all_services() {
     #     -P ubuntu-latest=catthehacker/ubuntu:act-latest \
     #     --input dockerfile=Dockerfile.dashboard-service \
     #     --input image_name=dashboard-service
-    
     
     echo -e "${GREEN}All services built successfully!${NC}"
 }

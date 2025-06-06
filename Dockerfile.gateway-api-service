@@ -28,6 +28,9 @@ COPY requirements_enhanced.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements_enhanced.txt
 
+RUN pip3 install --no-cache-dir --upgrade pip3 && \
+    pip3 install --no-cache-dir -r requirements_enhanced.txt
+
 # Create necessary directories
 RUN mkdir -p /app/logs
 

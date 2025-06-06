@@ -1,128 +1,89 @@
 #!/usr/bin/env python3
 
-"""
-Microservice that handles ML model inference separately from main API
-"""
+import logging
+import argparse
+import psutil
+from contextlib import asynccontextmanager
+from datetime import datetime, timezone
+from typing import Optional
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
-from typing import List, Dict, Any, Optional
-from datetime import datetime, timezone
-import logging
-import os
-import time
 import uvicorn
-from contextlib import asynccontextmanager
+
+# Import the enhanced model manager
+from lightweight_model_manager import lightweight_model_manager
+
+# Import your pydantic models
+from pydantic_models import (
+    ModelPredictionRequest, 
+    ModelBatchRequest,
+    HealthResponse,
+    SentimentResponse,
+    BatchSentimentResponse,
+    ErrorResponse,
+    ModelsResponse,
+    ModelDownloadRequest,
+    ModelDownloadResponse,
+    ModelInfoResponse,
+    MetricsResponse
+)
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Create a simple dummy model manager to avoid errors when the real one isn't available
-class DummyModelManager:
-    def __init__(self):
-        logger.info("Initializing dummy model manager")
-    
-    def health_check(self):
-        return {"status": "operational", "models_loaded": 0, "dummy": True}
-    
-    def predict_sentiment(self, text, model=None):
-        return {
-            "sentiment": "neutral",
-            "confidence": 0.8,
-            "compound_score": 0.0,
-            "probabilities": {"positive": 0.2, "neutral": 0.6, "negative": 0.2},
-            "model": "dummy",
-            "processing_time_ms": 0.5
-        }
-    
-    def list_available_models(self):
-        return {"dummy": {"name": "Dummy Model", "type": "fallback", "size": "small"}}
-    
-    def get_recommended_model(self):
-        return "dummy"
-    
-    def download_model_async(self, model):
-        return {"status": "success", "model": model, "dummy": True}
-    
-    def load_model_lazy(self, model):
-        logger.info(f"Pretending to load model: {model}")
-        return True
-    
-    def cleanup(self):
-        pass
+# Global variables
+startup_time: Optional[datetime] = None
 
-# Import lightweight model manager - wrap in try/except for graceful failure
-try:
-    from .lightweight_model_manager import LightweightModelManager
-    lightweight_model_manager = LightweightModelManager()
-    MODEL_MANAGER_AVAILABLE = True
-except ImportError:
-    logger.error("Model manager not available - using dummy implementation")
-    lightweight_model_manager = DummyModelManager()
-    MODEL_MANAGER_AVAILABLE = True  # Set to True since we have a dummy
+# Fix: Use modern datetime with timezone
+def get_current_time():
+    """Get current UTC time using modern datetime API"""
+    return datetime.now(timezone.utc)
 
-# ============================================
-# PYDANTIC MODELS
-# ============================================
+def get_uptime_string():
+    """Calculate uptime string"""
+    if startup_time is None:
+        return "Unknown"
+    
+    uptime_seconds = (get_current_time() - startup_time).total_seconds()
+    hours = int(uptime_seconds // 3600)
+    minutes = int((uptime_seconds % 3600) // 60)
+    seconds = int(uptime_seconds % 60)
+    return f"{hours}h {minutes}m {seconds}s"
 
-class ModelPredictionRequest(BaseModel):
-    text: str = Field(..., min_length=1, max_length=5000)
-    model: str = Field(default="distilbert-sentiment")
-    include_probabilities: bool = Field(default=True)
-
-class ModelBatchRequest(BaseModel):
-    texts: List[str] = Field(..., max_items=50)
-    model: str = Field(default="distilbert-sentiment") 
-    include_probabilities: bool = Field(default=True)
-
-class ModelDownloadRequest(BaseModel):
-    model: str = Field(...)
-
-# ============================================
-# LIFESPAN MANAGEMENT
-# ============================================
-
+# Enhanced lifespan with model manager integration
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Application lifespan management"""
+    global startup_time
+    
     # Startup
-    logger.info("🚀 Starting Model Service...")
+    logger.info("🤖 UCLA Sentiment Analysis Lightweight Model Service starting...")
+    startup_time = get_current_time()
     
-    # Optionally pre-load default model
-    if MODEL_MANAGER_AVAILABLE:
-        model_to_preload = os.getenv("PRELOAD_MODEL")
-        if model_to_preload:
-            logger.info(f"Pre-loading model: {model_to_preload}")
-            try:
-                lightweight_model_manager.load_model_lazy(model_to_preload)
-                logger.info(f"✅ Pre-loaded model: {model_to_preload}")
-            except Exception as e:
-                logger.warning(f"Failed to pre-load model: {e}")
+    # Initialize model manager
+    try:
+        await lightweight_model_manager.initialize()
+        logger.info("✅ Model manager initialized successfully")
+    except Exception as e:
+        logger.error(f"❌ Failed to initialize model manager: {e}")
     
-    logger.info("🔄 Designed for easy model swapping and isolated inference")
-    logger.info("📚 API documentation available at /docs")
+    logger.info("🔄 Service ready for model swapping and inference")
     
     yield
     
     # Shutdown
-    logger.info("🛑 Model Service shutting down...")
-    
-    # Cleanup
-    if MODEL_MANAGER_AVAILABLE:
-        lightweight_model_manager.cleanup()
+    logger.info("🛑 Lightweight Model Service shutting down...")
+    try:
+        await lightweight_model_manager.cleanup()
+    except Exception as e:
+        logger.warning(f"Error during cleanup: {e}")
 
-# ============================================
-# FASTAPI APP
-# ============================================
-
+# Create FastAPI app with lifespan
 app = FastAPI(
-    title="UCLA Sentiment Analysis - Model Service",
-    description="Dedicated microservice for ML model inference",
+    title="UCLA Sentiment Analysis Lightweight Model Service",
+    description="🚀 Designed for easy model swapping and isolated inference with HuggingFace integration",
     version="1.0.0",
-    docs_url="/docs",
-    redoc_url="/redoc",
     lifespan=lifespan
 )
 
@@ -135,203 +96,293 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ============================================
-# MODEL SERVICE ENDPOINTS
-# ============================================
-
 @app.get("/")
 async def root():
-    """Model service information"""
-    return {
-        "service": "UCLA Sentiment Analysis - Model Service",
-        "version": "1.0.0",
-        "description": "Dedicated microservice for ML model inference",
-        "model_manager_available": MODEL_MANAGER_AVAILABLE,
-        "endpoints": {
-            "health": "GET /health",
-            "predict": "POST /predict", 
-            "predict_batch": "POST /predict/batch",
-            "models": "GET /models",
-            "download": "POST /models/download"
-        },
-        "timestamp": datetime.now(timezone.utc).isoformat()
-    }
-
-@app.get("/health")
-async def health_check():
-    """Health check for model service"""
-    health_info = lightweight_model_manager.health_check()
+    """Root endpoint with API documentation"""
+    health_status = await lightweight_model_manager.get_health_status()
     
     return {
-        "status": "healthy",
-        "service": "model-service",
-        "model_manager": "available",
-        "health_info": health_info,
-        "timestamp": datetime.now(timezone.utc).isoformat()
+        "message": "🤖 UCLA Sentiment Analysis Lightweight Model Service",
+        "status": "healthy" if health_status["initialized"] else "degraded",
+        "version": "1.0.0",
+        "uptime": get_uptime_string(),
+        "timestamp": get_current_time().isoformat(),
+        "model_manager": {
+            "available": health_status["torch_available"],
+            "models_loaded": health_status["models_loaded"],
+            "models_available": health_status["models_available"]
+        },
+        "endpoints": {
+            "health": "GET /health - Service health check",
+            "predict": "POST /predict - Single text prediction", 
+            "predict_batch": "POST /predict/batch - Batch predictions",
+            "models": "GET /models - List available models",
+            "models_download": "POST /models/download - Download model",
+            "models_info": "GET /models/{model_key} - Get model details",
+            "metrics": "GET /metrics - Service performance metrics"
+        },
+        "docs": "/docs",
+        "openapi": "/openapi.json"
     }
 
-@app.post("/predict")
-async def predict_sentiment(request: ModelPredictionRequest):
-    """Predict sentiment using ML model"""
+@app.get("/health", response_model=HealthResponse)
+async def health_check():
+    """Health check endpoint"""
     try:
-        logger.info(f"Model prediction request: {request.model} for text length {len(request.text)}")
+        # Get memory info
+        memory = psutil.virtual_memory()
+        memory_info = {
+            "total_gb": round(memory.total / (1024**3), 2),
+            "available_gb": round(memory.available / (1024**3), 2),
+            "used_percent": memory.percent,
+            "free_gb": round((memory.total - memory.used) / (1024**3), 2)
+        }
         
-        result = lightweight_model_manager.predict_sentiment(
-            request.text, 
-            request.model
+        # Get model manager health status
+        manager_health = await lightweight_model_manager.get_health_status()
+        
+        status = "healthy" if manager_health["initialized"] else "degraded"
+        
+        return HealthResponse(
+            status=status,
+            service_name="Lightweight Model Service",
+            timestamp=get_current_time(),
+            manager_available=manager_health["initialized"],
+            memory_info=memory_info,
+            uptime=get_uptime_string()
         )
         
-        if not request.include_probabilities:
-            result.pop('probabilities', None)
+    except Exception as e:
+        logger.error(f"Health check failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Health check failed: {str(e)}")
+
+@app.post("/predict", response_model=SentimentResponse)
+async def predict(request: ModelPredictionRequest):
+    """Single prediction endpoint using model manager with smart fallback"""
+    try:
+        # Use model manager for prediction with smart model selection
+        result = await lightweight_model_manager.predict_sentiment_async(
+            text=request.text,
+            model_key=request.model_name  # Can be None for auto-selection
+        )
         
-        # Add service metadata
-        result['service'] = 'model-service'
-        result['service_version'] = '1.0.0'
+        # Convert to response format
+        response_data = {
+            "text": request.text,
+            "sentiment": result["sentiment"],
+            "confidence": result["confidence"] if request.return_confidence else None,
+            "scores": result["probabilities"] if request.return_confidence else None,
+            "model_used": result["model_used"],
+            "processing_time": result["processing_time_ms"] / 1000  # Convert to seconds
+        }
         
-        logger.info(f"Prediction complete: {result['sentiment']} (conf: {result.get('confidence', 0):.2f})")
-        return result
+        return SentimentResponse(**response_data)
         
     except Exception as e:
-        logger.error(f"Error in model prediction: {e}")
-        raise HTTPException(status_code=500, detail=f"Model prediction failed: {str(e)}")
+        logger.error(f"Prediction failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Prediction failed: {str(e)}")
 
-@app.post("/predict/batch")
-async def predict_batch_sentiment(request: ModelBatchRequest):
-    """Batch predict sentiment using ML model"""
+@app.post("/predict/batch", response_model=BatchSentimentResponse)
+async def predict_batch(request: ModelBatchRequest):
+    """Batch prediction endpoint using model manager with smart fallback"""
     try:
-        logger.info(f"Batch prediction request: {request.model} for {len(request.texts)} texts")
-        
-        start_time = time.time()
+        start_time = get_current_time()
         results = []
         
-        for i, text in enumerate(request.texts):
-            try:
-                result = lightweight_model_manager.predict_sentiment(text, request.model)
-                result['batch_index'] = i
-                
-                if not request.include_probabilities:
-                    result.pop('probabilities', None)
-                
-                results.append(result)
-            except Exception as e:
-                logger.error(f"Error processing text {i}: {e}")
-                results.append({
-                    'batch_index': i,
-                    'text': text[:100] + '...' if len(text) > 100 else text,
-                    'error': str(e),
-                    'sentiment': 'neutral',
-                    'confidence': 0.0
-                })
+        # Process each text using model manager with smart selection
+        for text in request.texts:
+            result = await lightweight_model_manager.predict_sentiment_async(
+                text=text,
+                model_key=request.model_name  # Can be None for auto-selection
+            )
+            
+            response_data = SentimentResponse(
+                text=text,
+                sentiment=result["sentiment"],
+                confidence=result["confidence"] if request.return_confidence else None,
+                scores=result["probabilities"] if request.return_confidence else None,
+                model_used=result["model_used"],
+                processing_time=result["processing_time_ms"] / 1000
+            )
+            results.append(response_data)
         
-        total_time = (time.time() - start_time) * 1000
+        total_time = (get_current_time() - start_time).total_seconds()
         
-        # Calculate summary
-        successful_results = [r for r in results if 'error' not in r]
-        sentiments = [r['sentiment'] for r in successful_results]
+        # Use the model from the first prediction for reporting
+        model_used = results[0].model_used if results else "unknown"
         
-        summary = {
-            "total_processed": len(results),
-            "successful": len(successful_results),
-            "failed": len(results) - len(successful_results),
-            "total_processing_time_ms": round(total_time, 2),
-            "average_time_per_text_ms": round(total_time / len(request.texts), 2),
-            "model_used": request.model,
-            "service": "model-service",
-            "sentiment_distribution": {
-                "positive": sentiments.count('positive'),
-                "negative": sentiments.count('negative'),
-                "neutral": sentiments.count('neutral')
-            }
-        }
-        
-        response = {
-            "results": results,
-            "summary": summary,
-            "timestamp": datetime.now(timezone.utc).isoformat()
-        }
-        
-        logger.info(f"Batch prediction complete: {summary}")
-        return response
+        return BatchSentimentResponse(
+            results=results,
+            total_processed=len(results),
+            total_processing_time=total_time,
+            model_used=model_used
+        )
         
     except Exception as e:
-        logger.error(f"Error in batch prediction: {e}")
+        logger.error(f"Batch prediction failed: {e}")
         raise HTTPException(status_code=500, detail=f"Batch prediction failed: {str(e)}")
 
-@app.get("/models")
-async def list_models():
-    """List available models"""
+@app.get("/models", response_model=ModelsResponse)
+async def get_models():
+    """Get available models from model manager"""
     try:
-        models = lightweight_model_manager.list_available_models()
+        models_data = await lightweight_model_manager.list_available_models_async()
         
-        return {
-            "available": True,
-            "service": "model-service",
-            "models": models,
-            "recommended_model": lightweight_model_manager.get_recommended_model(),
-            "timestamp": datetime.now(timezone.utc).isoformat()
-        }
+        # Convert to response format
+        model_list = []
+        for key, info in models_data["available_models"].items():
+            model_info = {
+                "name": key,
+                "type": info["type"],
+                "loaded": info["status"] == "loaded",
+                "size_mb": info.get("memory_mb"),
+                "last_used": info.get("loaded_at") if info["status"] == "loaded" else None
+            }
+            model_list.append(model_info)
+        
+        return ModelsResponse(
+            available_models=model_list,
+            current_model=models_data.get("recommended_model"),
+            total_models=models_data["total_models"]
+        )
         
     except Exception as e:
-        logger.error(f"Error listing models: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to list models: {str(e)}")
+        logger.error(f"Failed to get models: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get models: {str(e)}")
 
-@app.post("/models/download")
-async def download_model(request: ModelDownloadRequest):
-    """Download a specific model"""
+@app.post("/models/download", response_model=ModelDownloadResponse)
+async def download_model_post(request: ModelDownloadRequest):
+    """Download model using model manager"""
     try:
-        logger.info(f"Model download request: {request.model}")
+        # Use model manager to download from HuggingFace
+        result = await lightweight_model_manager.download_from_huggingface(
+            model_key=request.model_name,
+            force_download=request.force_download
+        )
         
-        result = lightweight_model_manager.download_model_async(request.model)
-        
-        return {
-            "status": "success",
-            "message": f"Model {request.model} downloaded successfully",
-            "model_info": result,
-            "service": "model-service",
-            "timestamp": datetime.now(timezone.utc).isoformat()
-        }
+        return ModelDownloadResponse(
+            message=f"Model {request.model_name} downloaded successfully",
+            model_name=request.model_name,
+            status="downloaded",
+            download_size_mb=result.get("size_mb"),
+            estimated_time_minutes=None,  # Could add estimation logic
+            timestamp=get_current_time()
+        )
         
     except Exception as e:
-        logger.error(f"Error downloading model: {e}")
+        logger.error(f"Model download failed: {e}")
         raise HTTPException(status_code=500, detail=f"Model download failed: {str(e)}")
 
-@app.get("/models/{model_key}")
+@app.get("/models/{model_key}", response_model=ModelInfoResponse)
 async def get_model_info(model_key: str):
-    """Get information about a specific model"""
+    """Get detailed information about a specific model from model manager"""
     try:
-        models = lightweight_model_manager.list_available_models()
+        model_info = await lightweight_model_manager.get_model_info_async(model_key)
         
-        if model_key not in models:
-            raise HTTPException(status_code=404, detail=f"Model {model_key} not found")
+        # Convert to response format
+        return ModelInfoResponse(
+            model_key=model_key,
+            name=model_info["name"],
+            type=model_info["type"],
+            architecture=model_info.get("hf_model_id"),
+            loaded=model_info["status"] == "loaded",
+            size_mb=model_info.get("memory_mb"),
+            parameters=None,  # Could extract from HF info
+            accuracy=None,  # Could add if available
+            last_used=model_info.get("loaded_at"),
+            created_date=None,
+            version="1.0.0",
+            description=model_info["description"],
+            supported_languages=model_info.get("languages"),
+            labels=["positive", "negative", "neutral"],  # Standard sentiment labels
+            performance_metrics=None
+        )
         
-        return {
-            "model_key": model_key,
-            "info": models[model_key],
-            "service": "model-service",
-            "timestamp": datetime.now(timezone.utc).isoformat()
-        }
-        
-    except HTTPException:
-        raise
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
-        logger.error(f"Error getting model info: {e}")
+        logger.error(f"Failed to get model info for {model_key}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get model info: {str(e)}")
 
-# ============================================
-# MAIN ENTRY POINT
-# ============================================
+@app.get("/metrics", response_model=MetricsResponse)
+async def get_metrics():
+    """Get comprehensive service metrics"""
+    try:
+        memory = psutil.virtual_memory()
+        cpu_percent = psutil.cpu_percent(interval=1)
+        
+        # Get process-specific metrics
+        import os
+        current_process = psutil.Process(os.getpid())
+        process_memory = current_process.memory_info()
+        
+        # Get model manager metrics
+        manager_health = await lightweight_model_manager.get_health_status()
+        
+        return MetricsResponse(
+            service={
+                "uptime": get_uptime_string(),
+                "status": "healthy" if manager_health["initialized"] else "degraded",
+                "manager_available": manager_health["initialized"],
+                "timestamp": get_current_time().isoformat()
+            },
+            system={
+                "memory": {
+                    "total_gb": round(memory.total / (1024**3), 2),
+                    "available_gb": round(memory.available / (1024**3), 2),
+                    "used_percent": memory.percent,
+                    "free_gb": round((memory.total - memory.used) / (1024**3), 2)
+                },
+                "cpu": {
+                    "usage_percent": cpu_percent,
+                    "count": psutil.cpu_count()
+                }
+            },
+            process={
+                "memory": {
+                    "rss_mb": round(process_memory.rss / (1024**2), 2),
+                    "vms_mb": round(process_memory.vms / (1024**2), 2)
+                },
+                "cpu_percent": current_process.cpu_percent(),
+                "threads": current_process.num_threads(),
+                "pid": os.getpid()
+            },
+            models={
+                "loaded_count": manager_health["models_loaded"],
+                "available_count": manager_health["models_available"],
+                "current_model": None  # Could track current/default model
+            },
+            requests={
+                "total_predictions": manager_health["total_predictions"],
+                "total_batch_predictions": 0,  # Could track separately
+                "average_response_time_ms": manager_health["avg_prediction_time_ms"],
+                "error_rate": 0.0  # Could track error rate
+            }
+        )
+        
+    except Exception as e:
+        logger.error(f"Failed to get metrics: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get metrics: {str(e)}")
 
-if __name__ == "__main__":
-    host = os.getenv("HOST", "0.0.0.0")
-    port = int(os.getenv("PORT", 8081))
+def main():
+    """Main function with argument parsing"""
+    parser = argparse.ArgumentParser(description="UCLA Sentiment Analysis Lightweight Model Service")
+    parser.add_argument("--host", default="0.0.0.0", help="Host to bind to")
+    parser.add_argument("--port", type=int, default=8081, help="Port to bind to")
+    parser.add_argument("--log-level", default="info", help="Log level")
     
-    logger.info(f"🚀 Starting Model Service on {host}:{port}")
+    args = parser.parse_args()
+    
+    logger.info(f"🚀 Starting Enhanced Lightweight Model Service on {args.host}:{args.port}")
+    logger.info("🔄 Designed for easy model swapping and HuggingFace integration")
+    logger.info("📚 API documentation available at /docs")
     
     uvicorn.run(
-        "model_service:app",
-        host=host,
-        port=port,
-        reload=False,
-        log_level="info",
-        access_log=True
+        app, 
+        host=args.host, 
+        port=args.port, 
+        log_level=args.log_level
     )
+
+if __name__ == "__main__":
+    main()
