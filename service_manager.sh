@@ -34,56 +34,144 @@ show_usage() {
     echo
 }
 
+
+cleanup() {
+    # Clean up the foler with ._* and temp files
+    echo -e "Cleanup started!"
+    find . -name '._*' -delete
+    echo -e "Cleanup ended!"
+}
+
 # Function to build all Docker images
 build_all_services() {
     echo -e "${BLUE}Building all services...${NC}"
-    find . -name '._*' -delete
+    cleanup
     echo -e "${YELLOW}Building gateway-api-service...${NC}"
+    docker build -t ohsonoresearch/gateway-api-service -f Dockerfile.gateway-api .
+    docker tag gateway-api-service ohsonoresearch/gateway-api-service:latest
+
+    # act workflow_dispatch \
+    #     --secret-file .secrets \
+    #     -P ubuntu-latest=catthehacker/ubuntu:act-latest \
+    #     --input dockerfile=Dockerfile.gateway-api-service \
+    #     --input image_name=gateway-api-service 
+
+    
+    echo -e "${YELLOW}Building model-service...${NC}"
+    cleanup
+    docker build -t ohsonoresearch/model-service -f Dockerfile.model-service .
+    docker tag model-service ohsonoresearch/model-service:latest
+
+    # act workflow_dispatch \
+    #     --secret-file .secrets \
+    #     -P ubuntu-latest=catthehacker/ubuntu:act-latest \
+    #     --input dockerfile=Dockerfile.model-service \
+    #     --input image_name=model-service
+
+
+    echo -e "${YELLOW}Building worker-scraper-service...${NC}"
+    cleanup
+    docker build -t ohsonoresearch/worker-scraper-service -f Dockerfile.worker-scraper-service .
+    docker tag worker-scraper-service ohsonoresearch/worker-scraper-service:latest
+
+    # act workflow_dispatch \
+    #     --secret-file .secrets \
+    #     -P ubuntu-latest=catthehacker/ubuntu:act-latest \
+    #     --input dockerfile=Dockerfile.worker-scraper-service \
+    #     --input image_name=worker-scraper-service
+
+
+    echo -e "${YELLOW}Building dashboard-service...${NC}"
+    docker build -t ohsonoresearch/dashboard-service -f Dockerfile.dashboard-service .
+    docker tag dashboard-service ohsonoresearch/dashboard-service:latest
+
+    # act workflow_dispatch \
+    #     --secret-file .secrets \
+    #     -P ubuntu-latest=catthehacker/ubuntu:act-latest \
+    #     --input dockerfile=Dockerfile.dashboard-service \
+    #     --input image_name=dashboard-service
+    
+    
+    echo -e "${GREEN}All services built successfully!${NC}"
+}
+
+# Function to build all Docker images
+build_test_services() {
+    echo -e "${BLUE}Testing all docker build for services...${NC}"
+    cleanup
+    echo -e "${YELLOW}Test Building gateway-api-service...${NC}"
     #docker build -t ohsonoresearch/gateway-api-service -f Dockerfile.gateway-api .
     act workflow_dispatch \
         --secret-file .secrets \
         -P ubuntu-latest=catthehacker/ubuntu:act-latest \
         --input dockerfile=Dockerfile.gateway-api-service \
-        --input image_name=gateway-api-service 
+        --input image_name=gateway-api-service \
+        --input test_mode=build-test
 
-    docker tag gateway-api-service ohsonoresearch/gateway-api-service:latest
+    #docker tag gateway-api-service ohsonoresearch/gateway-api-service:latest
     
-    echo -e "${YELLOW}Building model-service...${NC}"
+    echo -e "${YELLOW}Test Building model-service...${NC}"
+    cleanup
     #docker build -t ohsonoresearch/model-service -f Dockerfile.model-service .
+    
     act workflow_dispatch \
         --secret-file .secrets \
         -P ubuntu-latest=catthehacker/ubuntu:act-latest \
         --input dockerfile=Dockerfile.model-service \
-        --input image_name=model-service
+        --input image_name=model-service \
+        --input test_mode=build-test
 
-    docker tag model-service ohsonoresearch/model-service:latest
+    #docker tag model-service ohsonoresearch/model-service:latest
 
-    echo -e "${YELLOW}Building worker-scraper-service...${NC}"
+    echo -e "${YELLOW}Test Building model-service-bert...${NC}"
+    cleanup
+    #docker build -t ohsonoresearch/model-service -f Dockerfile.model-service .
+    
+    act workflow_dispatch \
+        --secret-file .secrets \
+        -P ubuntu-latest=catthehacker/ubuntu:act-latest \
+        --input dockerfile=Dockerfile.model-service-distrilbert \
+        --input image_name=model-service-distilbert \
+        --input test_mode=build-test
+
+    #docker tag model-service ohsonoresearch/model-service:latest
+
+
+
+    echo -e "${YELLOW}Test Building worker-scraper-service...${NC}"
+    cleanup
     #docker build -t ohsonoresearch/worker-scraper-service -f Dockerfile.worker-scraper-service .
+
     act workflow_dispatch \
         --secret-file .secrets \
         -P ubuntu-latest=catthehacker/ubuntu:act-latest \
         --input dockerfile=Dockerfile.worker-scraper-service \
-        --input image_name=worker-scraper-service
+        --input image_name=worker-scraper-service \
+        --input test_mode=build-test
+
 
     docker tag worker-scraper-service ohsonoresearch/worker-scraper-service:latest
 
-    echo -e "${YELLOW}Building dashboard-service...${NC}"
+    echo -e "${YELLOW}Test Building dashboard-service...${NC}"
+    cleanup
     #docker build -t ohsonoresearch/dashboard-service -f Dockerfile.dashboard-service .
     act workflow_dispatch \
         --secret-file .secrets \
         -P ubuntu-latest=catthehacker/ubuntu:act-latest \
         --input dockerfile=Dockerfile.dashboard-service \
-        --input image_name=dashboard-service
+        --input image_name=dashboard-service \
+        --input test_mode=build-test
+
     
-    docker tag dashboard-service ohsonoresearch/dashboard-service:latest
+    #docker tag dashboard-service ohsonoresearch/dashboard-service:latest
     
-    echo -e "${GREEN}All services built successfully!${NC}"
+    echo -e "${GREEN}All services test built successfully!${NC}"
 }
 
 # Function to start all services
 start_services() {
     echo -e "${BLUE}Starting all services...${NC}"
+    cleanup
     docker-compose up -d
     
     echo -e "${YELLOW}Waiting for services to start...${NC}"
@@ -95,6 +183,7 @@ start_services() {
 # Function to stop all services
 stop_services() {
     echo -e "${BLUE}Stopping all services...${NC}"
+    cleanup
     docker-compose down
     echo -e "${GREEN}All services stopped.${NC}"
 }
@@ -102,6 +191,7 @@ stop_services() {
 # Function to restart all services
 restart_services() {
     echo -e "${BLUE}Restarting all services...${NC}"
+    cleanup
     docker-compose restart
     
     echo -e "${YELLOW}Waiting for services to restart...${NC}"
@@ -118,10 +208,15 @@ check_services_status() {
 
 push_all_services() {
     echo -e "${BLUE}push to github for all services...${NC}"
+    cleanup
     docker push ohsonoresearch/dashboard-service:latest
+    cleanup
     docker push ohsonoresearch/gateway-api-service:latest
+    cleanup
     docker push ohsonoresearch/worker-scrap-service:latest
+    cleanup
     docker push ohsonoresearch/model-service:latest
+    cleanup
     docker push ohsonoresearch/model-service-distilbert:latest
 
     echo -e "${YELLOW}push for all services ...${NC}"
@@ -139,6 +234,9 @@ view_service_logs() {
             ;;
         "model-service")
             container="model_service"
+            ;;
+        "model-service-distilbert")
+            container="model_service_distilbert"
             ;;
         "worker-scraper-service")
             container="worker_scraper_service"
@@ -198,6 +296,10 @@ case "$command" in
     "build-all")
         build_all_services
         ;;
+    "build-test")
+        build_test_services
+        ;;
+
     "start")
         start_services
         ;;

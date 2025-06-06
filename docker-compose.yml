@@ -35,6 +35,28 @@ services:
     networks:
       - sentiment_network
 
+  model-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.model-service-distilbert
+    container_name: model_service
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8081
+      - MODEL_CACHE_DIR=/app/models
+      - PRELOAD_MODEL=distilbert-sentiment
+    volumes:
+      - model_cache:/app/models
+      - ./logs:/app/logs
+    ports:
+      - "${MODEL_SERVICE_PORT:-8081}:8081"
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - sentiment_network
+
   gateway-api-service:
     build:
       context: .
@@ -72,24 +94,7 @@ services:
     networks:
       - sentiment_network
 
-  model-service-service:
-    build:
-      context: .
-      dockerfile: Dockerfile.model-service-distilbert
-    container_name: model_service
-    environment:
-      - HOST=0.0.0.0
-      - PORT=8081
-      - MODEL_CACHE_DIR=/app/models
-      - PRELOAD_MODEL=distilbert-sentiment
-    volumes:
-      - model_cache:/app/models
-      - ./logs:/app/logs
-    ports:
-      - "${MODEL_SERVICE_PORT:-8081}:8081"
-    restart: unless-stopped
-    networks:
-      - sentiment_network
+
 
   worker-scraper-service:
     build:
@@ -126,7 +131,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.dashboard-service
-    container_name: dashboard-service
+    container_name: dashboard_service
     environment:
       - API_URL=http://gateway-api-service:8080
       - DB_HOST=postgres
@@ -146,6 +151,7 @@ services:
       - gateway-api-service
       - redis
       - postgres
+      - model-service
     restart: unless-stopped
     networks:
       - sentiment_network
