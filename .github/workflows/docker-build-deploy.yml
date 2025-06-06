@@ -110,9 +110,6 @@ jobs:
         else
           echo "✅ DOCKERHUB_TOKEN secret is set"
         fi
-          
-        echo "Username length: ${#{{ secrets.DOCKERHUB_USERNAME }}}"
-        echo "Token length: ${#{{ secrets.DOCKERHUB_TOKEN }}}"        
         
     - name: Log in to DockerHub
       if: |
@@ -121,7 +118,7 @@ jobs:
         github.event.inputs.local_test != 'true'
       uses: docker/login-action@v3
       with:
-        registry: docker.io
+        registry: ${{ env.REGISTRY }}
         username: ${{ secrets.DOCKERHUB_USERNAME }}
         password: ${{ secrets.DOCKERHUB_TOKEN }}
       env:
@@ -135,7 +132,7 @@ jobs:
       id: meta
       uses: docker/metadata-action@v5
       with:
-        images: ${{ env.REGISTRY }}/${{ env.IMAGE_ORG }}/${{ github.event.inputs.image_name || 'sentiment-analysis-service' }}
+        images: ${{ env.REGISTRY }}/${{ env.IMAGE_ORG }}/${{ github.event.inputs.image_name || 'dashboard-service' }}
         tags: |
           type=ref,event=branch
           type=ref,event=pr
@@ -145,7 +142,7 @@ jobs:
           type=raw,value=${{ github.event.inputs.tag }},enable=${{ github.event_name == 'workflow_dispatch' }}
           type=sha,prefix=sha-
         labels: |
-          org.opencontainers.image.title=${{ github.event.inputs.image_name || 'sentiment-analysis-service' }}
+          org.opencontainers.image.title=${{ github.event.inputs.image_name || 'dashboard-service' }}
           org.opencontainers.image.description=Docker image for ${{ github.repository }}
           org.opencontainers.image.vendor=ohsonoresearch
           
@@ -160,7 +157,7 @@ jobs:
         platforms: linux/amd64
         push: false
         load: true
-        tags: ${{ github.event.inputs.image_name || 'sentiment-analysis-service' }}:local-test
+        tags: ${{ github.event.inputs.image_name || 'dashboard-service' }}:local-test
         cache-from: type=gha
         cache-to: type=gha,mode=max
 
@@ -185,7 +182,7 @@ jobs:
         github.event.inputs.local_test == 'true'
       run: |
         echo "✅ Docker image built successfully!"
-        echo "Image: ${{ github.event.inputs.image_name || 'sentiment-analysis-service' }}:local-test"
+        echo "Image: ${{ github.event.inputs.image_name || 'dashboard-service' }}:local-test"
         echo "Dockerfile used: ${{ steps.dockerfile_info.outputs.dockerfile }}"
         docker images | head -10
   # disabled this step
@@ -197,7 +194,7 @@ jobs:
   #   - name: Run Trivy vulnerability scanner
   #     uses: aquasecurity/trivy-action@v0.31.0
   #     with:
-  #       image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_ORG }}/${{ github.event.inputs.image_name || 'sentiment-analysis-service' }}:latest
+  #       image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_ORG }}/${{ github.event.inputs.image_name || 'dashboard-service' }}:latest
   #       format: 'sarif'
   #       output: 'trivy-results.sarif'
         
