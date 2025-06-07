@@ -15,7 +15,8 @@ ENV PYTHONDONTWRITEBYTECODE=1
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         gcc \
-        g++ && \
+        g++ \
+        curl && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
@@ -26,20 +27,21 @@ COPY requirements_worker_scraper_minimal.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements_worker_scraper_minimal.txt
 
-RUN pip3 install --no-cache-dir --upgrade pip3 && \
-    pip3 install --no-cache-dir -r requirements_worker_scraper_minimal.txt
-
 
 # Download NLTK data
-RUN python -c "import nltk; nltk.download('vader_lexicon', quiet=True); nltk.download('punkt', quiet=True)"
+RUN python -c "import nltk; nltk.data.path.append('/app/nltk_data'); nltk.download('vader_lexicon', download_dir='/app/nltk_data', quiet=True); nltk.download('punkt', download_dir='/app/nltk_data', quiet=True); nltk.download('stopwords', download_dir='/app/nltk_data', quiet=True); print('✅ NLTK data downloaded')"
 
 # Create necessary directories
-RUN mkdir -p /app/worker/data /app/worker/logs
+RUN mkdir -p /app/worker/data /app/worker/logs /app/nltk_data
+
+# Set NLTK data path
+ENV NLTK_DATA=/app/nltk_data
 
 # Copy only the necessary application code
 COPY worker/ ./worker/
 COPY app/utils/ ./app/utils/
 COPY app/database/ ./app/database/
+COPY models/nltk_data ./app/models/nltk_data 
 
 # Create non-root user
 RUN groupadd -r worker_user && useradd -r -g worker_user worker_user && \
@@ -54,9 +56,10 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=90s --retries=3 \
 # Expose port
 EXPOSE 8082
 
-# Create entrypoint script
-RUN echo '#!/bin/bash\ncd /app\nuvicorn worker.main:app --host 0.0.0.0 --port 8082' > /app/entrypoint.sh && \
-    chmod +x /app/entrypoint.sh
+# # Create entrypoint script
+# RUN echo '#!/bin/bash\ncd /app\nuvicorn worker.main:app --host 0.0.0.0 --port 8082' > /app/entrypoint.sh && \
+#     chmod +x /app/entrypoint.sh
 
-# Run the worker with the correct entrypoint
-CMD ["/app/entrypoint.sh"]
+# # Run the worker with the correct entrypoint
+# CMD ["/app/entrypoint.sh"]
+CMD ["uvicorn", "worker.main:app", "--host", "0.0.0.0", "--port", "8082"]

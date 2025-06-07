@@ -41,28 +41,14 @@ COPY requirements_model_service_distilbert.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements_model_service_distilbert.txt
 
-RUN pip3 install --no-cache-dir --upgrade pip3 && \
-    pip3 install --no-cache-dir -r requirements_model_service_distilbert.txt
-
-# Downloads VADER lexicon during Docker build (not runtime)
-# RUN python -c "\
-# import nltk; \
-# import ssl; \
-# # Handle SSL issues \
-# try: \
-#     _create_unverified_https_context = ssl._create_unverified_context; \
-# except AttributeError: \
-#     pass; \
-# else: \
-#     ssl._create_default_https_context = _create_unverified_https_context; \
-# \
-# nltk.data.path.append('/app/nltk_data'); \
-# nltk.download('vader_lexicon', download_dir='/app/nltk_data', quiet=False); \
-# print('✅ VADER lexicon downloaded successfully'); \
-# "
-
 # Create necessary directories
-RUN mkdir -p /app/models /app/logs
+RUN mkdir -p /app/models /app/logs /app/nltk_data
+
+# Set NLTK data path
+ENV NLTK_DATA=/app/nltk_data
+
+# Download NLTK data as root before switching users
+RUN python -c "import nltk; nltk.data.path.append('/app/nltk_data'); nltk.download('vader_lexicon', download_dir='/app/nltk_data', quiet=True); print('✅ VADER lexicon downloaded successfully')"
 
 # Copy only the necessary application code
 COPY model_services/ ./model_services/
@@ -81,13 +67,12 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 \
 # Expose port
 EXPOSE 8081
 
-# Run the DistilBERT service
-CMD ["uvicorn", "model_services.lightweight_model_service:app", "--host", "0.0.0.0", "--port", "8081"]
-#CMD ["gunicorn", "model_services.distilbert_service:app", "--host", "0.0.0.0", "--port", "8081"]
-
 # # Create entrypoint script
 # RUN echo '#!/bin/bash\ncd /app\nuvicorn model_services.model_service:app --host 0.0.0.0 --port 8081' > /app/entrypoint.sh && \
 #     chmod +x /app/entrypoint.sh
 
 # # Run the API with the correct entrypoint
 # CMD ["/app/entrypoint.sh"]
+
+# Run the DistilBERT service
+CMD ["uvicorn", "model_services.lightweight_model_service:app", "--host", "0.0.0.0", "--port", "8081"]

@@ -36,15 +36,21 @@ try:
     import nltk
     from nltk.sentiment import SentimentIntensityAnalyzer
     
-    # Download VADER lexicon if not present
+    # Check if VADER lexicon is available, download only if needed
     try:
         nltk.data.find('vader_lexicon')
+        VADER_AVAILABLE = True
+        logger.info("✅ NLTK VADER lexicon found")
     except LookupError:
-        logger.info("Downloading NLTK VADER lexicon...")
-        nltk.download('vader_lexicon', quiet=True)
+        try:
+            logger.info("Downloading NLTK VADER lexicon...")
+            nltk.download('vader_lexicon', quiet=True)
+            VADER_AVAILABLE = True
+            logger.info("✅ NLTK VADER lexicon downloaded")
+        except Exception as download_error:
+            logger.warning(f"Failed to download VADER lexicon: {download_error}")
+            VADER_AVAILABLE = False
     
-    VADER_AVAILABLE = True
-    logger.info("✅ NLTK VADER available as fallback sentiment analyzer")
 except ImportError:
     VADER_AVAILABLE = False
     logger.warning("NLTK VADER not available - limited fallback options")
@@ -91,6 +97,7 @@ class LightweightModelManager:
         self.available_models = {
             "vader": {
                 "name": "NLTK VADER Sentiment",
+                "type": "rule-based",
                 "model_name": "vader_lexicon",
                 "description": "Fast rule-based sentiment analyzer (no download required)",
                 "size": "tiny",
@@ -109,6 +116,7 @@ class LightweightModelManager:
             },
             "distilbert-sentiment": {
                 "name": "DistilBERT Sentiment",
+                "type": "transformer",
                 "model_name": "distilbert-base-uncased-finetuned-sst-2-english",
                 "description": "Fast and efficient sentiment analysis",
                 "size": "small",
@@ -127,6 +135,7 @@ class LightweightModelManager:
             },
             "twitter-roberta": {
                 "name": "Twitter RoBERTa",
+                "type": "transformer",
                 "model_name": "cardiffnlp/twitter-roberta-base-sentiment-latest", 
                 "description": "Optimized for social media text",
                 "size": "medium",
@@ -145,6 +154,7 @@ class LightweightModelManager:
             },
             "bert-multilingual": {
                 "name": "BERT Multilingual Sentiment",
+                "type": "transformer",
                 "model_name": "nlptown/bert-base-multilingual-uncased-sentiment",
                 "description": "Multilingual sentiment analysis",
                 "size": "large", 
@@ -163,6 +173,7 @@ class LightweightModelManager:
             },
             "finbert-sentiment": {
                 "name": "FinBERT Sentiment",
+                "type": "transformer",
                 "model_name": "ProsusAI/finbert",
                 "description": "Financial sentiment analysis",
                 "size": "medium",

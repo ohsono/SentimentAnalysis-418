@@ -39,8 +39,7 @@ COPY requirements_model_service_minimal.txt .
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r requirements_model_service_minimal.txt
 
-RUN pip3 install --no-cache-dir --upgrade pip3 \
-    && pip3 install --no-cache-dir -r requirements_model_service_minimal.txt
+RUN pip3 install --no-cache-dir -r requirements_model_service_minimal.txt
 
 
 # Downloads VADER lexicon during Docker build (not runtime)
@@ -86,4 +85,5 @@ ENV OMP_NUM_THREADS=2
 ENV MKL_NUM_THREADS=2
 
 # Run the lightweight model service
-CMD ["python", "lightweight_model_service.py"]
+# CMD ["python", "lightweight_model_service.py"]
+CMD ["uvicorn", "model_services.model-service:app", "--host", "0.0.0.0", "--port", "8081"]

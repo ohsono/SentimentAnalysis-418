@@ -19,6 +19,10 @@ praw==7.8.1
 # nltk model
 nltk==3.9.1
 
+# Data processing
+pandas==2.2.0
+#numpy<=2.2.0
+
 # Essential ML libraries
 torch>=2.0.0,<2.8.0
 #transformers>=4.35.0
@@ -30,4 +34,6 @@ torch>=2.0.0,<2.8.0
 # Scientific computing
 # numpy>=1.24.0
 # Performance monitoring
-# psutil>=5.9.0
+psutil>=6.0.0
+
+pyarrow==14.0.2

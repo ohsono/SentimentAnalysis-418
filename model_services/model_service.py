@@ -12,7 +12,11 @@ from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
 # Import the enhanced model manager
-from lightweight_model_manager import lightweight_model_manager
+try:
+    from .lightweight_model_manager import lightweight_model_manager
+except ImportError:
+    # Fallback for when running directly (not as module)
+    from lightweight_model_manager import lightweight_model_manager
 
 # Import your pydantic models
 from pydantic_models import (

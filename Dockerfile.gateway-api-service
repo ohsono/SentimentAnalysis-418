@@ -28,8 +28,7 @@ COPY requirements_enhanced.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements_enhanced.txt
 
-RUN pip3 install --no-cache-dir --upgrade pip3 && \
-    pip3 install --no-cache-dir -r requirements_enhanced.txt
+RUN pip3 install --no-cache-dir -r requirements_enhanced.txt
 
 # Create necessary directories
 RUN mkdir -p /app/logs
@@ -52,8 +51,9 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=90s --retries=3 \
 EXPOSE 8080
 
 # Create entrypoint script
-RUN echo '#!/bin/bash\ncd /app\nuvicorn app.api.main_enhanced:app --host 0.0.0.0 --port 8080' > /app/entrypoint.sh && \
-    chmod +x /app/entrypoint.sh
+# RUN echo '#!/bin/bash\ncd /app\nuvicorn app.api.main_enhanced:app --host 0.0.0.0 --port 8080' > /app/entrypoint.sh && \
+#     chmod +x /app/entrypoint.sh
 
 # Fix the entry point
-CMD ["/app/entrypoint.sh"]
+# CMD ["/app/entrypoint.sh"]
+CMD ["uvicorn", "app.api.main_enhanced:app", "--host", "0.0.0.0", "--port", "8080"]

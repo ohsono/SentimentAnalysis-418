@@ -25,6 +25,7 @@ COPY requirements_model_service_minimal.txt .
 # Install Python dependencies
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements_model_service_minimal.txt
+RUN pip3 install --no-cache-dir -r requirements_model_service_minimal.txt
 
 # Create model cache directory
 RUN mkdir -p /app/models/nlk_data  /app/logs
@@ -32,7 +33,7 @@ RUN mkdir -p /app/models/nlk_data  /app/logs
 # Copy only the necessary application code
 COPY model_services/ ./model_services/
 COPY app/utils/ ./app/utils/
-COPY models/nlk_data ./app/models/nlk_data
+COPY models/nltk_data ./app/models/nltk_data
 # Create non-root user
 RUN groupadd -r model_user && useradd -r -g model_user model_user && \
     chown -R model_user:model_user /app

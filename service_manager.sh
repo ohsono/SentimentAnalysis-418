@@ -10,9 +10,9 @@ RED='\033[0;31m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-echo -e "${BLUE}============================================${NC}"
-echo -e "${BLUE}  UCLA Sentiment Analysis Service Manager${NC}"
-echo -e "${BLUE}============================================${NC}"
+echo -e "${BLUE}================================================${NC}"
+echo -e "${BLUE}  STAT-418: UCLA Sentiment Analysis Service Manager${NC}"
+echo -e "${BLUE}================================================${NC}"
 
 # Function to display usage information
 show_usage() {
@@ -47,7 +47,7 @@ build_all_services() {
     echo -e "${BLUE}Building all services...${NC}"
     cleanup
     echo -e "${YELLOW}Building gateway-api-service...${NC}"
-    docker build -t ohsonoresearch/gateway-api-service -f Dockerfile.gateway-api .
+    docker build -t ohsonoresearch/gateway-api-service -f Dockerfile.gateway-api-service .
     docker tag gateway-api-service ohsonoresearch/gateway-api-service:latest
 
     # act workflow_dispatch \
@@ -160,7 +160,7 @@ build_test_services() {
         --input test_mode=build-test
 
 
-    docker tag worker-scraper-service ohsonoresearch/worker-scraper-service:latest
+    #docker tag worker-scraper-service ohsonoresearch/worker-scraper-service:latest
 
     echo -e "${YELLOW}Test Building dashboard-service...${NC}"
     cleanup
@@ -223,11 +223,12 @@ push_all_services() {
     cleanup
     docker push ohsonoresearch/gateway-api-service:latest
     cleanup
-    docker push ohsonoresearch/worker-scrap-service:latest
+    docker push ohsonoresearch/worker-scraper-service:latest
     cleanup
     docker push ohsonoresearch/model-service:latest
     cleanup
     docker push ohsonoresearch/model-service-distilbert:latest
+    cleanup
 
     echo -e "${YELLOW}push for all services ...${NC}"
     sleep 5
@@ -307,9 +308,8 @@ case "$command" in
         build_all_services
         ;;
     "build-test")
-        build_test_services
+        build_test_services # test docker build locally
         ;;
-
     "start")
         start_services
         ;;
