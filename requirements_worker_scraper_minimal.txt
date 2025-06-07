@@ -6,25 +6,34 @@ fastapi>=0.104.0
 uvicorn[standard]>=0.24.0
 pydantic>=2.4.0
 
-# Essential ML libraries
-torch>=2.0.0,<2.8.0
-transformers>=4.35.0
-tokenizers>=0.14.0
-# Note: torchaudio commented out - only needed for audio models
-# torchaudio>=2.0.0
-nltk
-# Hugging Face essentials
-huggingface-hub>=0.17.0
-
-# Scientific computing
-numpy>=1.24.0
+# Basic utilities
+requests>=2.28.0
+python-dotenv>=1.0.0
 
 # HTTP client for health checks
 httpx>=0.25.0
 
-# Utilities
-python-dotenv>=1.0.0
+# reddit scraper module
+praw==7.8.1
 
+# nltk model
+nltk==3.9.1
+
+# Data processing
+pandas==2.2.0
+#numpy<=2.2.0
+
+# Essential ML libraries
+torch>=2.0.0,<2.8.0
+#transformers>=4.35.0
+#tokenizers>=0.14.0
+# Note: torchaudio commented out - only needed for audio models
+# torchaudio>=2.0.0
+# Hugging Face essentials
+#huggingface-hub>=0.17.0
+# Scientific computing
+# numpy>=1.24.0
 # Performance monitoring
-psutil>=5.9.0
+psutil>=6.0.0
 
+pyarrow==14.0.2

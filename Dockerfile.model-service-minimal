@@ -39,6 +39,26 @@ COPY requirements_model_service_minimal.txt .
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r requirements_model_service_minimal.txt
 
+RUN pip3 install --no-cache-dir -r requirements_model_service_minimal.txt
+
+
+# Downloads VADER lexicon during Docker build (not runtime)
+# RUN python -c "\
+# import nltk; \
+# import ssl; \
+# # Handle SSL issues \
+# try: \
+#     _create_unverified_https_context = ssl._create_unverified_context; \
+# except AttributeError: \
+#     pass; \
+# else: \
+#     ssl._create_default_https_context = _create_unverified_https_context; \
+# \
+# nltk.data.path.append('/app/nltk_data'); \
+# nltk.download('vader_lexicon', download_dir='/app/nltk_data', quiet=False); \
+# print('✅ VADER lexicon downloaded successfully'); \
+# "
+
 # Create directories
 RUN mkdir -p /app/models /app/logs /app/app/ml
 
@@ -65,4 +85,5 @@ ENV OMP_NUM_THREADS=2
 ENV MKL_NUM_THREADS=2
 
 # Run the lightweight model service
-CMD ["python", "lightweight_model_service.py"]
+# CMD ["python", "lightweight_model_service.py"]
+CMD ["uvicorn", "model_services.model-service:app", "--host", "0.0.0.0", "--port", "8081"]

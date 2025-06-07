@@ -20,6 +20,64 @@
 git clone git@github.com:ohsono/SentimentAnalysis-418.git
 cd SentimentAnalysis-418
 
+# Build the docker container images
+./service_manager.sh build-all
+
+# Start services {invoke docker-compose up -d command}
+./service_manager.sh start
+
+# Restart services
+./service_manager.sh restart
+
+# push images to Dockerhub registry
+./service_manager.sh push-all
+
+
+# Check all services Status
+curl http://localhost:8080/status/
+
+expected output
+{
+  "api": "operational",
+  "version": "2.0.0",
+  "environment": "development",
+  "database_available": true,
+  "services": {
+    "sentiment_analyzer": "operational",
+    "cors": "enabled",
+    "async_data_loader": "operational",
+    "model_service": "unavailable",
+    "worker_api": "unavailable",
+    "dashboard": "degraded",
+    "dashboard_response_time_ms": 19.48,
+    "redis": "operational",
+    "redis_response_time_ms": 4.33,
+    "database": "operational",
+    "postgresql": "connected"
+  },
+  "performance": {
+    "uptime": "operational",
+    "response_time_ms": 45.2,
+    "requests_processed": 1247,
+    "errors": 0,
+    "success_rate": "100%"
+  },
+  "endpoints": {
+    "health_check": "✅",
+    "sentiment_analysis": "✅",
+    "batch_processing": "✅",
+    "reddit_scraping": "❌",
+    "task_management": "❌",
+    "analytics": "✅",
+    "alerts": "✅"
+  },
+  "last_data_collection": "real-time service health check",
+  "timestamp": "2025-06-06T17:22:25.457646+00:00"
+}
+
+# Swagger doc page
+curl http://localhost:8080/docs
+
 # Test the API
 curl -X POST http://localhost:8080/predict \
   -H "Content-Type: application/json" \
@@ -61,7 +119,6 @@ Sentiment Analysis is an **enterprise-grade sentiment analysis platform** built 
 ## 🏗️ **Architecture**
 
 ### **Microservices Design**
-
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                    Sentiment Analysis Architecture                  │
@@ -71,7 +128,7 @@ Sentiment Analysis is an **enterprise-grade sentiment analysis platform** built 
 │                                  ⇓              ⇓               │
 │                            [PostgreSQL]   [Background Workers]   │
 │                                  ⇓              ⇓               │
-│                              [Redis Cache] → [Streamlit Dashboard] │
+│                            [Redis Cache] → [Streamlit Dashboard] │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -82,22 +139,10 @@ Sentiment Analysis is an **enterprise-grade sentiment analysis platform** built 
 |-----------|---------|------------|------|
 | **API Gateway** | Load balancing & routing | FastAPI | 8080 |
 | **Model Service** | ML inference (isolated) | PyTorch + HuggingFace | 8081 |
-| **Data Pipeline** | Async database operations | PostgreSQL + SQLAlchemy | 5432 |
-| **Background Workers** | Parallel processing | Celery + Redis | - |
+| **Database** | Async database operations | PostgreSQL + SQLAlchemy | 5432 |
 | **Cache Layer** | Session & analytics cache | Redis | 6379 |
+| **Background Workers** | Parallel processing | - | 8082 |
 | **Dashboard** | Real-time visualization | Streamlit | 8501 |
-
-### **Circuit Breaker Pattern**
-
-```python
-# Intelligent Failure Handling
-States: CLOSED → OPEN → HALF-OPEN → CLOSED
-
-- CLOSED: Normal operation (ML models)
-- OPEN: Service failed → VADER fallback  
-- HALF-OPEN: Testing recovery
-- Auto-recovery after 60 seconds
-```
 
 ---
 
@@ -176,10 +221,10 @@ Visualization:   Streamlit
 ## 📦 **Installation**
 
 ### **Prerequisites**
-- Docker 20.10+
-- Docker Compose 1.29+
-- Python 3.9+ (for local development)
-- 8GB+ RAM (recommended)
+- Docker 28.1.1, build 4eba377
+- Docker Compose v2.35.1-desktop.1
+- Python 3.11+ (for local development)
+- 4GB+ RAM (8GB+ recommended)
 
 ### **Quick Deploy**
 ```bash
@@ -187,12 +232,15 @@ Visualization:   Streamlit
 git clone git@github.com:ohsono/SentimentAnalysis-418.git
 cd SentimentAnalysis-418
 
-# 2. Set permissions and deploy
-python set_permissions.py
-./deploy_enhanced.sh deploy
+# 2. Build and push image to dockerhub
+./service-manager.sh build-all && ./service-manager.sh push-all
 
-# 3. Verify deployment
-curl http://localhost:8080/health
+# 3. Start container service
+./service-manager.sh start
+# or ./service-manager.sh restart
+
+# 3. Verify local deployment
+curl http://localhost:8080/status/
 ```
 
 ### **Development Setup**
@@ -220,7 +268,7 @@ import requests
 # Single prediction
 response = requests.post(
     "http://localhost:8080/predict",
-    json={"text": "I love this new AI model!"}
+    json={"text": "I love this new AI model!, UCLA is so awesome!"}
 )
 print(response.json())
 # Output: {"sentiment": "positive", "confidence": 0.95, "model": "distilbert"}
@@ -230,7 +278,7 @@ response = requests.post(
     "http://localhost:8080/predict/batch",
     json={
         "texts": [
-            "Great product!",
+            "Great product! Nice Job! UCLA MASDS!",
             "Terrible experience",
             "It's okay, nothing special"
         ]

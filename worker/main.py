@@ -134,7 +134,7 @@ async def health_check():
         "timestamp": datetime.now(timezone.utc).isoformat()
     }
 
-@app.get("/scrape")
+@app.get("/scrape/info")
 async def scrape_info():
     """
     GET /scrape - Information about how to use the scraping endpoint
@@ -142,7 +142,7 @@ async def scrape_info():
     return {
         "message": "Reddit Scraping Endpoint",
         "method": "POST",
-        "endpoint": "/scrape",
+        "endpoint": "/scrape/info",
         "description": "Submit a Reddit scraping task",
         "required_fields": {
             "subreddit": "Name of the subreddit to scrape (without r/)",

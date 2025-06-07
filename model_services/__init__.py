@@ -1,12 +1,8 @@
-from .model_service import *
-from .lightweight_model_service import *
-from .pydantic_models import ModelPredictionRequest, ModelBatchRequest
-from .pydantic_models import ModelDownloadRequest, ModelDownloadRequest
+"""
+Model Services Package
 
+This package contains the sentiment analysis model services for the UCLA Sentiment Analysis project.
+"""
 
-__all__ ==[
-    "ModelPredictionRequest",
-    "ModelBatchRequest",
-    "ModelDownloadRequest",
-    "ModelDownloadRequest"
-]
+__version__ = "1.0.0"
+__author__ = "UCLA MASDS Team"

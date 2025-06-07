@@ -44,6 +44,11 @@ on:
         required: false
         default: 'false'
 
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
 env:
   REGISTRY: docker.io
   IMAGE_ORG: ohsonoresearch
@@ -67,7 +72,8 @@ jobs:
           DOCKERFILE="${{ github.event.inputs.dockerfile }}"
         else
           # For automatic triggers, default to dashboard
-          DOCKERFILE="Dockerfile.gateway-api"
+          # DOCKERFILE="Dockerfile.gateway-api-service"
+          DOCKERFILE="Dockerfile.dashboard-service"
         fi
         
         echo "dockerfile=${DOCKERFILE}" >> $GITHUB_OUTPUT
@@ -83,7 +89,28 @@ jobs:
           echo "Available Dockerfiles:"
           ls -la Dockerfile*
         fi
-      
+
+    - name: Validate DockerHub Secrets
+      if: |
+        steps.dockerfile_info.outputs.dockerfile_exists == 'true' &&
+        github.event_name != 'pull_request' && 
+        github.event.inputs.local_test != 'true'
+      run: |
+        echo "Checking DockerHub secrets..."
+        if [ -z "${{ secrets.DOCKERHUB_USERNAME }}" ]; then
+          echo "❌ DOCKERHUB_USERNAME secret is missing or empty"
+          exit 1
+        else
+          echo "✅ DOCKERHUB_USERNAME secret is set"
+        fi
+        
+        if [ -z "${{ secrets.DOCKERHUB_TOKEN }}" ]; then
+          echo "❌ DOCKERHUB_TOKEN secret is missing or empty"
+          exit 1
+        else
+          echo "✅ DOCKERHUB_TOKEN secret is set"
+        fi
+        
     - name: Log in to DockerHub
       if: |
         steps.dockerfile_info.outputs.dockerfile_exists == 'true' &&
@@ -94,13 +121,18 @@ jobs:
         registry: ${{ env.REGISTRY }}
         username: ${{ secrets.DOCKERHUB_USERNAME }}
         password: ${{ secrets.DOCKERHUB_TOKEN }}
+      env:
+        # Add environment variables for debugging
+        DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+        DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+
         
     - name: Extract metadata
       if: steps.dockerfile_info.outputs.dockerfile_exists == 'true'
       id: meta
       uses: docker/metadata-action@v5
       with:
-        images: ${{ env.REGISTRY }}/${{ env.IMAGE_ORG }}/${{ github.event.inputs.image_name || 'sentiment-analysis-service' }}
+        images: ${{ env.REGISTRY }}/${{ env.IMAGE_ORG }}/${{ github.event.inputs.image_name || 'dashboard-service' }}
         tags: |
           type=ref,event=branch
           type=ref,event=pr
@@ -110,7 +142,7 @@ jobs:
           type=raw,value=${{ github.event.inputs.tag }},enable=${{ github.event_name == 'workflow_dispatch' }}
           type=sha,prefix=sha-
         labels: |
-          org.opencontainers.image.title=${{ github.event.inputs.image_name || 'sentiment-analysis-service' }}
+          org.opencontainers.image.title=${{ github.event.inputs.image_name || 'dashboard-service' }}
           org.opencontainers.image.description=Docker image for ${{ github.repository }}
           org.opencontainers.image.vendor=ohsonoresearch
           
@@ -125,7 +157,7 @@ jobs:
         platforms: linux/amd64
         push: false
         load: true
-        tags: ${{ github.event.inputs.image_name || 'sentiment-analysis-service' }}:local-test
+        tags: ${{ github.event.inputs.image_name || 'dashboard-service' }}:local-test
         cache-from: type=gha
         cache-to: type=gha,mode=max
 
@@ -150,7 +182,7 @@ jobs:
         github.event.inputs.local_test == 'true'
       run: |
         echo "✅ Docker image built successfully!"
-        echo "Image: ${{ github.event.inputs.image_name || 'sentiment-analysis-service' }}:local-test"
+        echo "Image: ${{ github.event.inputs.image_name || 'dashboard-service' }}:local-test"
         echo "Dockerfile used: ${{ steps.dockerfile_info.outputs.dockerfile }}"
         docker images | head -10
   # disabled this step
@@ -162,7 +194,7 @@ jobs:
   #   - name: Run Trivy vulnerability scanner
   #     uses: aquasecurity/trivy-action@v0.31.0
   #     with:
-  #       image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_ORG }}/${{ github.event.inputs.image_name || 'sentiment-analysis-service' }}:latest
+  #       image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_ORG }}/${{ github.event.inputs.image_name || 'dashboard-service' }}:latest
   #       format: 'sarif'
   #       output: 'trivy-results.sarif'
         

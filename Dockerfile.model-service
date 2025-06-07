@@ -25,14 +25,15 @@ COPY requirements_model_service_minimal.txt .
 # Install Python dependencies
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements_model_service_minimal.txt
+RUN pip3 install --no-cache-dir -r requirements_model_service_minimal.txt
 
 # Create model cache directory
-RUN mkdir -p /app/models /app/logs
+RUN mkdir -p /app/models/nlk_data  /app/logs
 
 # Copy only the necessary application code
 COPY model_services/ ./model_services/
 COPY app/utils/ ./app/utils/
-
+COPY models/nltk_data ./app/models/nltk_data
 # Create non-root user
 RUN groupadd -r model_user && useradd -r -g model_user model_user && \
     chown -R model_user:model_user /app
@@ -47,8 +48,8 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=90s --retries=3 \
 EXPOSE 8081
 
 # Create entrypoint script
-RUN echo '#!/bin/bash\ncd /app\nuvicorn model_services.model_service:app --host 0.0.0.0 --port 8081' > /app/entrypoint.sh && \
-    chmod +x /app/entrypoint.sh
+# RUN "./app/uvicorn model_services.lightweight_model_service:app --host 0.0.0.0 --port 8081"
 
 # Run the API with the correct entrypoint
-CMD ["/app/entrypoint.sh"]
+#CMD ["/app/entrypoint.sh"]
+CMD ["uvicorn", "model_services.lightweight_model_service:app", "--host", "0.0.0.0", "--port", "8081"]
