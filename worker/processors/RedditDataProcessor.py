@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from typing import Dict, List, Any
 import logging
 from collections import defaultdict
-from transformers import pipeline
+#from transformers import pipeline
 
 # Configure logging
 logging.basicConfig(

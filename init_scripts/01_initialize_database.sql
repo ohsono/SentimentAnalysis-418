@@ -151,3 +151,53 @@ CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_alerts_severity_status
 
 CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_reddit_posts_subreddit_created
     ON reddit_posts(subreddit, reddit_created_utc);
+
+
+-- Create the missing views
+CREATE OR REPLACE VIEW posts_with_sentiment AS
+SELECT 
+    p.id,
+    p.post_id,
+    p.title,
+    p.subreddit,
+    p.author,
+    p.score,
+    p.created_utc,
+    p.scraped_at,
+    s.sentiment,
+    s.confidence,
+    s.compound_score,
+    s.model_used
+FROM reddit_posts p
+LEFT JOIN sentiment_analysis_results s ON p.sentiment_analysis_id = s.id;
+
+CREATE OR REPLACE VIEW comments_with_sentiment AS
+SELECT 
+    c.id,
+    c.comment_id,
+    c.post_id,
+    c.body,
+    c.author,
+    c.score,
+    c.created_utc,
+    c.scraped_at,
+    s.sentiment,
+    s.confidence,
+    s.compound_score,
+    s.model_used
+FROM reddit_comments c
+LEFT JOIN sentiment_analysis_results s ON c.sentiment_analysis_id = s.id;
+
+CREATE OR REPLACE VIEW alert_summary AS
+SELECT 
+    alert_type,
+    severity,
+    content_type,
+    subreddit,
+    COUNT(*) as alert_count,
+    MIN(created_at) as first_alert,
+    MAX(created_at) as latest_alert
+FROM sentiment_alerts 
+WHERE status = 'active'
+GROUP BY alert_type, severity, content_type, subreddit
+ORDER BY alert_count DESC;

@@ -40,6 +40,9 @@ RUN groupadd -r model_user && useradd -r -g model_user model_user && \
 
 USER model_user
 
+RUN python -c "import nltk; nltk.download('vader_lexicon', download_dir='/app/nltk_data', quiet=True)"
+
+
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=90s --retries=3 \
     CMD curl -f http://localhost:8081/health || exit 1

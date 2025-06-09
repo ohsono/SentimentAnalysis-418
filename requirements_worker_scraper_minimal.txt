@@ -37,3 +37,11 @@ torch>=2.0.0,<2.8.0
 psutil>=6.0.0
 
 pyarrow==14.0.2
+
+demoji==1.1.0
+
+# cache & DB
+redis
+asyncpg 
+sqlalchemy
+psycopg2-binary
