@@ -26,6 +26,8 @@ COPY requirements_worker_scraper_minimal.txt .
 # Install Python dependencies
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements_worker_scraper_minimal.txt
+RUN pip3 install --no-cache-dir -r requirements_worker_scraper_minimal.txt
+
 
 
 # Download NLTK data

@@ -10,11 +10,19 @@ import sys
 import time
 import logging
 import asyncio
+import psutil
 import argparse
 import traceback
 from typing import Dict, Any, Optional, List
 from datetime import datetime, timezone
 from pathlib import Path
+from contextlib import asynccontextmanager
+
+try:
+    from .lightweight_model_manager import lightweight_model_manager
+except ImportError:
+    # Fallback for when running directly (not as module)
+    from lightweight_model_manager import lightweight_model_manager
 
 # FastAPI imports
 from fastapi import FastAPI, HTTPException, BackgroundTasks
@@ -22,6 +30,28 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 import uvicorn
 import requests
+try:
+    from .pydantic_models import (
+        PredictionRequest,
+        PredictionResponse,
+        ModelBatchRequest,
+        HealthResponse,
+        SentimentResponse,
+        BatchSentimentResponse,
+        ErrorResponse,
+        ModelsResponse
+    )
+except ImportError:
+    from pydantic_models import (
+        PredictionRequest,
+        PredictionResponse,
+        ModelBatchRequest,
+        HealthResponse,
+        SentimentResponse,
+        BatchSentimentResponse,
+        ErrorResponse,
+        ModelsResponse
+    )
 
 # Configure logging
 logging.basicConfig(
@@ -29,6 +59,9 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+# Global variables
+startup_time: Optional[datetime] = None
 
 # Check available dependencies
 TORCH_AVAILABLE = False
@@ -91,49 +124,65 @@ try:
 except ImportError as e:
     logger.warning(f"❌ NLTK not available: {e}")
 
+# Fix: Use modern datetime with timezone
+def get_current_time():
+    """Get current UTC time using modern datetime API"""
+    return datetime.now(timezone.utc)
+
+def get_uptime_string():
+    """Calculate uptime string"""
+    if startup_time is None:
+        return "Unknown"
+    
+    uptime_seconds = (get_current_time() - startup_time).total_seconds()
+    hours = int(uptime_seconds // 3600)
+    minutes = int((uptime_seconds % 3600) // 60)
+    seconds = int(uptime_seconds % 60)
+    return f"{hours}h {minutes}m {seconds}s"
+
 # ============================================================================
 # PYDANTIC MODELS
 # ============================================================================
 
-class PredictionRequest(BaseModel):
-    text: str = Field(..., min_length=1, max_length=5000, description="Text to analyze")
-    model_name: Optional[str] = Field(default=None, description="Model to use (auto-select if None)")
-    return_confidence: bool = Field(default=True, description="Include confidence scores")
+# class PredictionRequest(BaseModel):
+#     text: str = Field(..., min_length=1, max_length=5000, description="Text to analyze")
+#     model_name: Optional[str] = Field(default=None, description="Model to use (auto-select if None)")
+#     return_confidence: bool = Field(default=True, description="Include confidence scores")
 
-class PredictionResponse(BaseModel):
-    text: str
-    sentiment: str
-    confidence: Optional[float] = None
-    scores: Optional[Dict[str, float]] = None
-    model_used: str
-    processing_time_ms: float
-    timestamp: str
+# class PredictionResponse(BaseModel):
+#     text: str
+#     sentiment: str
+#     confidence: Optional[float] = None
+#     scores: Optional[Dict[str, float]] = None
+#     model_used: str
+#     processing_time_ms: float
+#     timestamp: str
 
-class HealthResponse(BaseModel):
-    status: str
-    service: str
-    models_available: Dict[str, bool]
-    fallback_available: bool
-    timestamp: str
-    uptime_seconds: float
+# class HealthResponse(BaseModel):
+#     status: str
+#     service: str
+#     models_available: Dict[str, bool]
+#     fallback_available: bool
+#     timestamp: str
+#     uptime_seconds: float
     
-class ErrorResponse(BaseModel):
-    error: str
-    detail: str
-    timestamp: str
+# class ErrorResponse(BaseModel):
+#     error: str
+#     detail: str
+#     timestamp: str
 
-class BatchSentimentResponse(BaseModel):
-    results: List[PredictionResponse]
-    total_processed: int
-    total_processing_time: float
-    model_used: str
+# class BatchSentimentResponse(BaseModel):
+#     results: List[PredictionResponse]
+#     total_processed: int
+#     total_processing_time: float
+#     model_used: str
 
-class ModelsResponse(BaseModel):
-    models: List[Dict[str, Any]]
-    total_available: int
-    fallback_available: bool
-    recommended: Optional[str]
-    timestamp: str
+# class ModelsResponse(BaseModel):
+#     models: List[Dict[str, Any]]
+#     total_available: int
+#     fallback_available: bool
+#     recommended: Optional[str]
+#     timestamp: str
 
 # ============================================================================
 # SENTIMENT ANALYZER CLASS
@@ -405,6 +454,35 @@ class RobustSentimentAnalyzer:
 # Global analyzer instance
 analyzer = RobustSentimentAnalyzer()
 
+
+# Enhanced lifespan with model manager integration
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global startup_time
+    
+    # Startup
+    logger.info("🤖 UCLA Sentiment Analysis Lightweight Model Service starting...")
+    startup_time = get_current_time()
+    
+    # Initialize model manager
+    try:
+        await lightweight_model_manager.initialize()
+        logger.info("✅ Model manager initialized successfully")
+    except Exception as e:
+        logger.error(f"❌ Failed to initialize model manager: {e}")
+    
+    logger.info("🔄 Service ready for model swapping and inference")
+    
+    yield
+    
+    # Shutdown
+    logger.info("🛑 Lightweight Model Service shutting down...")
+    try:
+        await lightweight_model_manager.cleanup()
+    except Exception as e:
+        logger.warning(f"Error during cleanup: {e}")
+
+
 app = FastAPI(
     title="UCLA Sentiment Analysis - Fixed Model Service",
     description="Robust sentiment analysis with VADER fallback",
@@ -423,24 +501,51 @@ app.add_middleware(
 
 @app.get("/")
 async def root():
-    """Root endpoint"""
-    health = analyzer.get_health_status()
-    
+    """Root endpoint with API documentation"""
+#    health = analyzer.get_health_status()
+    # return {
+    #     "service": "UCLA Sentiment Analysis - Fixed Model Service",
+    #     "version": "2.0.0",
+    #     "status": "healthy",
+    #     "description": "Robust sentiment analysis with intelligent fallback",
+    #     "models_available": health["models_available"],
+    #     "fallback_available": health["fallback_available"],
+    #     "uptime_seconds": health["uptime_seconds"],
+    #     "endpoints": {
+    #         "predict": "POST /predict - Sentiment prediction",
+    #         "health": "GET /health - Service health check",
+    #         "models": "GET /models - List available models"
+    #     },
+    #     "timestamp": datetime.now(timezone.utc).isoformat()
+    # }
+
+    health_status = await lightweight_model_manager.get_health_status() 
+
     return {
-        "service": "UCLA Sentiment Analysis - Fixed Model Service",
-        "version": "2.0.0",
-        "status": "healthy",
-        "description": "Robust sentiment analysis with intelligent fallback",
-        "models_available": health["models_available"],
-        "fallback_available": health["fallback_available"],
-        "uptime_seconds": health["uptime_seconds"],
-        "endpoints": {
-            "predict": "POST /predict - Sentiment prediction",
-            "health": "GET /health - Service health check",
-            "models": "GET /models - List available models"
+        "message": "🤖 UCLA Sentiment Analysis Lightweight Model Service",
+        "status": "healthy" if health_status["initialized"] else "degraded",
+        "version": "2.2.0",
+        "uptime": get_uptime_string(),
+        "timestamp": get_current_time().isoformat(),
+        "model_manager": {
+            "available": health_status["torch_available"],
+            "models_loaded": health_status["models_loaded"],
+            "models_available": health_status["models_available"]
         },
-        "timestamp": datetime.now(timezone.utc).isoformat()
+        "endpoints": {
+            "health": "GET /health - Service health check",
+            "predict": "POST /predict - Single text prediction", 
+            "predict_batch": "POST /predict/batch - Batch predictions",
+            "models": "GET /models - List available models",
+            "models_download": "POST /models/download - Download model",
+            "models_info": "GET /models/{model_key} - Get model details",
+            "metrics": "GET /metrics - Service performance metrics"
+        },
+        "docs": "/docs",
+        "openapi": "/openapi.json"
     }
+
+
 
 @app.get("/health", response_model=HealthResponse)
 async def health_check():
@@ -462,11 +567,15 @@ async def health_check():
         
         return HealthResponse(
             status=status,
-            service="Fixed Model Service",
-            models_available=health["models_available"],
-            fallback_available=health["fallback_available"],
-            timestamp=datetime.now(timezone.utc).isoformat(),
-            uptime_seconds=health["uptime_seconds"]
+            service="Fixed Lightweight Model Service",
+            timestamp=get_current_time(),
+            manager_available=manager_health["initialized"],
+            memory_info=memory_info,
+            uptime=get_uptime_string()
+            # models_available=health["models_available"],
+            # fallback_available=health["fallback_available"],
+            # timestamp=datetime.now(timezone.utc).isoformat(),
+            # uptime_seconds=health["uptime_seconds"]
         )
         
     except Exception as e:
@@ -475,7 +584,7 @@ async def health_check():
 
 @app.post("/predict", response_model=PredictionResponse)
 async def predict_sentiment(request: PredictionRequest):
-    """Predict sentiment endpoint"""
+    """Single prediction endpoint using model manager with smart fallback"""
     try:
         logger.info(f"Prediction request: model={request.model_name}, text_length={len(request.text)}")
         
@@ -619,6 +728,66 @@ async def download_model(model_name: str, background_tasks: BackgroundTasks):
         "status": "downloading",
         "timestamp": datetime.now(timezone.utc).isoformat()
     }
+
+@app.get("/metrics", response_model=MetricsResponse)
+async def get_metrics():
+    """Get comprehensive service metrics"""
+    try:
+        memory = psutil.virtual_memory()
+        cpu_percent = psutil.cpu_percent(interval=1)
+        
+        # Get process-specific metrics
+        import os
+        current_process = psutil.Process(os.getpid())
+        process_memory = current_process.memory_info()
+        
+        # Get model manager metrics
+        manager_health = await lightweight_model_manager.get_health_status()
+        
+        return MetricsResponse(
+            service={
+                "uptime": get_uptime_string(),
+                "status": "healthy" if manager_health["initialized"] else "degraded",
+                "manager_available": manager_health["initialized"],
+                "timestamp": get_current_time().isoformat()
+            },
+            system={
+                "memory": {
+                    "total_gb": round(memory.total / (1024**3), 2),
+                    "available_gb": round(memory.available / (1024**3), 2),
+                    "used_percent": memory.percent,
+                    "free_gb": round((memory.total - memory.used) / (1024**3), 2)
+                },
+                "cpu": {
+                    "usage_percent": cpu_percent,
+                    "count": psutil.cpu_count()
+                }
+            },
+            process={
+                "memory": {
+                    "rss_mb": round(process_memory.rss / (1024**2), 2),
+                    "vms_mb": round(process_memory.vms / (1024**2), 2)
+                },
+                "cpu_percent": current_process.cpu_percent(),
+                "threads": current_process.num_threads(),
+                "pid": os.getpid()
+            },
+            models={
+                "loaded_count": manager_health["models_loaded"],
+                "available_count": manager_health["models_available"],
+                "current_model": None  # Could track current/default model
+            },
+            requests={
+                "total_predictions": manager_health["total_predictions"],
+                "total_batch_predictions": 0,  # Could track separately
+                "average_response_time_ms": manager_health["avg_prediction_time_ms"],
+                "error_rate": 0.0  # Could track error rate
+            }
+        )
+        
+    except Exception as e:
+        logger.error(f"Failed to get metrics: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get metrics: {str(e)}")
 
 # ============================================================================
 # MAIN ENTRY POINT

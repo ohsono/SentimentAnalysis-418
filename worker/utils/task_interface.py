@@ -126,11 +126,30 @@ class TaskInterface:
         tasks = []
         
         try:
-            # Get all task files
+            # Get all task files (excluding macOS hidden files)
             all_files = []
-            all_files.extend(self.task_dir.glob("*.json"))
-            all_files.extend(self.results_dir.glob("*_result.json"))
-            all_files.extend(self.results_dir.glob("*_error.json"))
+            
+            # Helper function to filter out macOS hidden files
+            def is_valid_file(path):
+                name = path.name
+                return (name.endswith('.json') and 
+                       not name.startswith('._') and 
+                       not name.startswith('.DS_Store'))
+            
+            # Get task files
+            for f in self.task_dir.glob("*.json"):
+                if is_valid_file(f):
+                    all_files.append(f)
+            
+            # Get result files
+            for f in self.results_dir.glob("*_result.json"):
+                if is_valid_file(f):
+                    all_files.append(f)
+            
+            # Get error files
+            for f in self.results_dir.glob("*_error.json"):
+                if is_valid_file(f):
+                    all_files.append(f)
             
             # Sort by modification time
             all_files.sort(key=lambda x: x.stat().st_mtime, reverse=True)

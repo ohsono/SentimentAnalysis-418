@@ -238,6 +238,21 @@ class DatabaseManager:
                         )
                     return existing
                 
+                # Handle created_utc field - could be string or datetime
+                created_utc = post_data['created_utc']
+                if isinstance(created_utc, str):
+                    # If it's a string, parse it
+                    if created_utc.endswith('Z'):
+                        created_utc = created_utc.replace('Z', '+00:00')
+                    created_utc = datetime.fromisoformat(created_utc)
+                elif not isinstance(created_utc, datetime):
+                    # If it's neither string nor datetime, try to convert
+                    created_utc = datetime.fromtimestamp(float(created_utc), tz=timezone.utc)
+                
+                # Ensure timezone info
+                if created_utc.tzinfo is None:
+                    created_utc = created_utc.replace(tzinfo=timezone.utc)
+                
                 # Insert new post
                 post_id = await conn.fetchval("""
                     INSERT INTO reddit_posts 
@@ -254,7 +269,7 @@ class DatabaseManager:
                     post_data.get('score'),
                     post_data.get('upvote_ratio'),
                     post_data.get('num_comments'),
-                    datetime.fromisoformat(post_data['created_utc'].replace('Z', '+00:00')),
+                    created_utc,
                     sentiment_id
                 )
                 

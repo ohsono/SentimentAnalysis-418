@@ -14,13 +14,27 @@ from threading import local
 from typing import Dict, Any, List, Optional
 import asyncio
 # Import worker utilities
-from .utils.task_interface import TaskInterface
-from .worker_orchestrator import WorkerOrchestrator  
+try:
+    # Try relative imports first (when running as module)
+    from .utils.task_interface import TaskInterface
+    from .worker_orchestrator import WorkerOrchestrator  
+    from .pydantic_models import (WorkerScrapeRequest, TaskStatusResponse, 
+                                     PipelineRequest, PipelineStatusResponse, 
+                                     PipelineHistoryResponse, WorkerHealthResponse)
+    from .config.local_config import *
+    from .config.worker_config import WorkerConfig
+except ImportError:
+    # Fall back to absolute imports (when running directly)
+    from worker.utils.task_interface import TaskInterface
+    from worker.worker_orchestrator import WorkerOrchestrator  
+    from worker.pydantic_models import (WorkerScrapeRequest, TaskStatusResponse, 
+                                       PipelineRequest, PipelineStatusResponse, 
+                                       PipelineHistoryResponse, WorkerHealthResponse)
+    from worker.config.local_config import *
+    from worker.config.worker_config import WorkerConfig
+
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends
 #from pydantic import BaseModel, Field
-from .pydantic_models import WorkerScrapeRequest, TaskStatusResponse
-from .config.local_config import *
-from .config.worker_config import WorkerConfig
 
 import uvicorn
 import redis
@@ -39,10 +53,12 @@ if str(parent_dir) not in sys.path:
 # Initialize task interface
 task_interface = TaskInterface('data/')
 
-# Configure Redis
-REDIS_HOST = os.getenv("REDIS_HOST", "redis")
-REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
-REDIS_PASSWORD = os.getenv("REDIS_PASSWORD", "sentiment_redis")
+# Configure Redis using local_config
+from worker.config.local_config import get_redis_config
+redis_config = get_redis_config()
+REDIS_HOST = redis_config["host"]
+REDIS_PORT = redis_config["port"]
+REDIS_PASSWORD = redis_config["password"]
 
 # localconfig['postgres'] = get_db_config()
 # localconfig['redis'] = get_redis_config()
@@ -84,9 +100,9 @@ async def get_redis():
 # =======================================================
 
 app = FastAPI(
-    title="UCLA Sentiment Analysis - Worker Service",
-    description="Worker service for Reddit data scraping and processing",
-    version="1.0.0",
+    title="UCLA Sentiment Analysis - Enhanced Worker Service",
+    description="Enhanced worker service with scheduled Reddit data scraping and processing pipeline",
+    version="2.0.0",
     docs_url="/docs",
     redoc_url="/redoc"
 )
@@ -98,41 +114,65 @@ asyn_worker = WorkerOrchestrator()
 
 @app.get("/")
 async def root():
-    """Worker service information"""
+    """Enhanced worker service information"""
+    scheduler_config = asyn_worker.scheduler_config if hasattr(asyn_worker, 'scheduler_config') else {}
+    
     return {
-        "service": "UCLA Sentiment Analysis - Worker Service",
-        "version": "1.0.0",
-        "description": "Worker service for Reddit data scraping and processing",
+        "service": "UCLA Sentiment Analysis - Enhanced Worker Service",
+        "version": "2.0.0",
+        "description": "Enhanced worker service with scheduled scraping and data pipeline",
+        "features": {
+            "scheduled_scraping": scheduler_config.get('enabled', False),
+            "auto_pipeline": scheduler_config.get('auto_pipeline_enabled', False),
+            "scraping_interval_minutes": scheduler_config.get('scraping_interval_minutes', 30),
+            "database_integration": True,
+            "error_retry": scheduler_config.get('retry_failed_tasks', False)
+        },
         "endpoints": {
             "health": "GET /health",
             "scrape_info": "GET /scrape",
             "scrape_submit": "POST /scrape",
+            "pipeline_run": "POST /pipeline/run",
+            "pipeline_status": "GET /pipeline/{id}/status",
+            "pipeline_cancel": "DELETE /pipeline/{id}/cancel",
+            "pipeline_history": "GET /pipeline/history",
+            "pipeline_active": "GET /pipeline/active",
             "tasks": "GET /tasks",
             "task_status": "GET /tasks/{task_id}",
             "api_docs": "GET /docs"
         },
-        "redis_connected": redis_client is not None and redis_client.ping(),
-        "timestamp": datetime.now(timezone.utc).isoformat()
-    }
-
-@app.get("/health")
-async def health_check():
-    """Health check for worker service"""
-    worker_health = task_interface.get_worker_health()
-    redis_status = "connected" if redis_client and redis_client.ping() else "disconnected"
-    
-    return {
-        "status": "healthy",
-        "service": "worker-service",
-        "worker_status": worker_health.get("status", "unknown"),
-        "redis_status": redis_status,
-        "tasks": {
-            "active": worker_health.get("active_tasks", 0),
-            "completed": worker_health.get("completed_tasks", 0),
-            "failed": worker_health.get("failed_tasks", 0)
+        "status": {
+            "redis_connected": redis_client is not None and redis_client.ping() if redis_client else False,
+            "scheduler_running": scheduler_config.get('enabled', False),
+            "pipeline_active": getattr(asyn_worker, 'pipeline_running', False)
         },
         "timestamp": datetime.now(timezone.utc).isoformat()
     }
+
+@app.get("/health", response_model=WorkerHealthResponse)
+async def health_check():
+    """Enhanced health check for worker service"""
+    worker_health = task_interface.get_worker_health()
+    redis_status = "connected" if redis_client and redis_client.ping() else "disconnected"
+    
+    # Get enhanced orchestrator information
+    scheduler_config = asyn_worker.scheduler_config if hasattr(asyn_worker, 'scheduler_config') else {}
+    
+    return WorkerHealthResponse(
+        status="healthy",
+        service="enhanced-worker-service",
+        version="2.0.0",
+        scheduler_enabled=scheduler_config.get('enabled', False),
+        pipeline_running=getattr(asyn_worker, 'pipeline_running', False),
+        database_connected=getattr(asyn_worker, 'db_manager', None) is not None,
+        redis_connected=redis_status == "connected",
+        active_pipelines=len(getattr(asyn_worker, 'active_pipelines', {})),
+        queue_size=worker_health.get("active_tasks", 0),
+        uptime_seconds=0.0,  # TODO: Implement uptime tracking
+        task_stats=getattr(asyn_worker, 'task_stats', {}),
+        next_scheduled_scrape=asyn_worker._get_next_scheduled_scrape().isoformat() if scheduler_config.get('enabled', False) and hasattr(asyn_worker, '_get_next_scheduled_scrape') else None,
+        timestamp=datetime.now(timezone.utc).isoformat()
+    )
 
 @app.get("/scrape/info")
 async def scrape_info():
@@ -417,6 +457,204 @@ async def cleanup_tasks(max_age_hours: int = 24, redis=Depends(get_redis)):
         raise HTTPException(status_code=500, detail=f"Error cleaning up tasks: {str(e)}")
 
 # =======================================================
+# PIPELINE API ENDPOINTS
+# =======================================================
+
+@app.post("/pipeline/run", response_model=dict)
+async def run_pipeline(request: PipelineRequest):
+    """
+    Execute the complete data pipeline: scraping → processing → cleaning → database loading
+    
+    This endpoint triggers the full pipeline and returns immediately with a pipeline ID.
+    Use /pipeline/{pipeline_id}/status to monitor progress.
+    """
+    try:
+        logger.info(f"Executing pipeline for r/{request.subreddit}")
+        
+        # Convert Pydantic model to dict
+        pipeline_request = {
+            'subreddit': request.subreddit,
+            'post_limit': request.post_limit,
+            'comment_limit': request.comment_limit,
+            'enable_processing': request.enable_processing,
+            'enable_cleaning': request.enable_cleaning,
+            'enable_database': request.enable_database,
+            'priority': request.priority,
+            'scheduled_time': request.scheduled_time,
+            'notify_webhook': request.notify_webhook
+        }
+        
+        # Execute pipeline via orchestrator
+        pipeline_id = await asyn_worker.execute_pipeline_api(pipeline_request)
+        
+        return {
+            "status": "accepted",
+            "message": f"Pipeline started for r/{request.subreddit}",
+            "pipeline_id": pipeline_id,
+            "estimated_duration": "3-10 minutes",
+            "steps": {
+                "scraping": True,
+                "processing": request.enable_processing,
+                "cleaning": request.enable_cleaning,
+                "database": request.enable_database
+            },
+            "endpoints": {
+                "status": f"/pipeline/{pipeline_id}/status",
+                "cancel": f"/pipeline/{pipeline_id}/cancel",
+                "logs": f"/pipeline/{pipeline_id}/logs"
+            },
+            "submitted_at": datetime.now(timezone.utc).isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Error starting pipeline: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to start pipeline: {str(e)}")
+
+@app.get("/pipeline/{pipeline_id}/status", response_model=PipelineStatusResponse)
+async def get_pipeline_status(pipeline_id: str):
+    """
+    Get the current status and progress of a pipeline execution
+    
+    Returns detailed information about pipeline progress, current step,
+    completed steps, and any errors that occurred.
+    """
+    try:
+        pipeline_status = asyn_worker.get_pipeline_status(pipeline_id)
+        
+        if not pipeline_status:
+            raise HTTPException(status_code=404, detail=f"Pipeline {pipeline_id} not found")
+        
+        return PipelineStatusResponse(
+            pipeline_id=pipeline_status['pipeline_id'],
+            status=pipeline_status['status'],
+            current_step=pipeline_status.get('current_step'),
+            progress=pipeline_status.get('progress', 0.0),
+            steps_completed=pipeline_status.get('steps_completed', []),
+            steps_failed=pipeline_status.get('steps_failed', []),
+            started_at=pipeline_status.get('started_at'),
+            completed_at=pipeline_status.get('completed_at'),
+            estimated_completion=pipeline_status.get('estimated_completion'),
+            result=pipeline_status.get('result'),
+            error=pipeline_status.get('error'),
+            logs=pipeline_status.get('logs', [])
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting pipeline status: {e}")
+        raise HTTPException(status_code=500, detail=f"Error retrieving pipeline status: {str(e)}")
+
+@app.delete("/pipeline/{pipeline_id}/cancel")
+async def cancel_pipeline(pipeline_id: str):
+    """
+    Cancel a running or queued pipeline
+    
+    If the pipeline is currently running, it will be stopped gracefully.
+    If it's queued, it will be removed from the queue.
+    """
+    try:
+        success = asyn_worker.cancel_pipeline(pipeline_id)
+        
+        if success:
+            return {
+                "status": "success",
+                "message": f"Pipeline {pipeline_id} has been cancelled",
+                "pipeline_id": pipeline_id,
+                "cancelled_at": datetime.now(timezone.utc).isoformat()
+            }
+        else:
+            raise HTTPException(status_code=404, detail=f"Pipeline {pipeline_id} not found or cannot be cancelled")
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error cancelling pipeline: {e}")
+        raise HTTPException(status_code=500, detail=f"Error cancelling pipeline: {str(e)}")
+
+@app.get("/pipeline/history", response_model=PipelineHistoryResponse)
+async def get_pipeline_history(limit: int = 20):
+    """
+    Get pipeline execution history and statistics
+    
+    Returns information about recent pipeline executions, success rates,
+    and performance statistics.
+    """
+    try:
+        history = asyn_worker.get_pipeline_history(limit=limit)
+        
+        return PipelineHistoryResponse(
+            total_executions=history['total_executions'],
+            successful_executions=history['successful_executions'],
+            failed_executions=history['failed_executions'],
+            average_duration_minutes=history['average_duration_minutes'],
+            recent_executions=history['recent_executions'],
+            next_scheduled=history.get('next_scheduled')
+        )
+        
+    except Exception as e:
+        logger.error(f"Error getting pipeline history: {e}")
+        raise HTTPException(status_code=500, detail=f"Error retrieving pipeline history: {str(e)}")
+
+@app.get("/pipeline/active")
+async def get_active_pipelines():
+    """
+    Get all currently active (running or queued) pipelines
+    
+    Returns a list of pipelines that are currently executing or waiting to execute.
+    """
+    try:
+        active_pipelines = asyn_worker.get_active_pipelines()
+        
+        return {
+            "active_pipelines": len(active_pipelines),
+            "pipelines": [
+                {
+                    "pipeline_id": pid,
+                    "status": state['status'],
+                    "current_step": state.get('current_step'),
+                    "progress": state.get('progress', 0.0),
+                    "started_at": state.get('started_at'),
+                    "subreddit": state.get('request', {}).get('subreddit', 'unknown')
+                }
+                for pid, state in active_pipelines.items()
+            ],
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting active pipelines: {e}")
+        raise HTTPException(status_code=500, detail=f"Error retrieving active pipelines: {str(e)}")
+
+@app.get("/pipeline/{pipeline_id}/logs")
+async def get_pipeline_logs(pipeline_id: str, tail: int = 50):
+    """
+    Get execution logs for a specific pipeline
+    
+    Returns the most recent log entries from the pipeline execution.
+    """
+    try:
+        pipeline_status = asyn_worker.get_pipeline_status(pipeline_id)
+        
+        if not pipeline_status:
+            raise HTTPException(status_code=404, detail=f"Pipeline {pipeline_id} not found")
+        
+        logs = pipeline_status.get('logs', [])
+        
+        return {
+            "pipeline_id": pipeline_id,
+            "total_logs": len(logs),
+            "logs": logs[-tail:] if logs else [],
+            "retrieved_at": datetime.now(timezone.utc).isoformat()
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting pipeline logs: {e}")
+        raise HTTPException(status_code=500, detail=f"Error retrieving pipeline logs: {str(e)}")
+
+# =======================================================
 # LIFESPAN MANAGEMENT
 # =======================================================
 
@@ -471,7 +709,7 @@ if __name__ == "__main__":
     logger.info(f"🚀 Starting Worker Service on {host}:{port}")
     
     uvicorn.run(
-        "main:app",
+        "worker.main:app",
         host=host,
         port=port,
         reload=False,

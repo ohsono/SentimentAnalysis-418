@@ -68,6 +68,16 @@ class WorkerConfig:
             'log_level': os.getenv('LOG_LEVEL', 'INFO'),
         }
         
+        # Scheduler Configuration
+        self.SCHEDULER_CONFIG = {
+            'enabled': os.getenv('SCHEDULER_ENABLED', 'true').lower() == 'true',
+            'scraping_interval_minutes': int(os.getenv('SCRAPING_INTERVAL_MINUTES', '30')),  # 30 minutes default
+            'auto_pipeline_enabled': os.getenv('AUTO_PIPELINE_ENABLED', 'true').lower() == 'true',
+            'retry_failed_tasks': os.getenv('RETRY_FAILED_TASKS', 'true').lower() == 'true',
+            'max_task_retries': int(os.getenv('MAX_TASK_RETRIES', '3')),
+            'cleanup_old_data_hours': int(os.getenv('CLEANUP_OLD_DATA_HOURS', '24')),
+        }
+        
         # API Communication Configuration
         self.API_CONFIG = {
             'web_service_url': os.getenv('WEB_SERVICE_URL', 'http://localhost:8080'),
@@ -90,6 +100,10 @@ class WorkerConfig:
     def get_processing_config(self) -> Dict[str, Any]:
         """Get processing configuration"""
         return self.PROCESSING_CONFIG.copy()
+    
+    def get_scheduler_config(self) -> Dict[str, Any]:
+        """Get scheduler configuration"""
+        return self.SCHEDULER_CONFIG.copy()
     
     def validate_config(self) -> bool:
         """Validate that all required configuration is present"""
@@ -124,6 +138,12 @@ class WorkerConfig:
         print(f"Web Service URL: {self.API_CONFIG['web_service_url']}")
         print(f"Database Host: {self.DATABASE_CONFIG['host']}")
         print(f"Reddit Client ID: {'*' * len(self.REDDIT_CONFIG['client_id']) if self.REDDIT_CONFIG['client_id'] else 'NOT SET'}")
+        print("\n📅 SCHEDULER CONFIGURATION:")
+        print(f"Scheduler Enabled: {self.SCHEDULER_CONFIG['enabled']}")
+        print(f"Scraping Interval: {self.SCHEDULER_CONFIG['scraping_interval_minutes']} minutes")
+        print(f"Auto Pipeline: {self.SCHEDULER_CONFIG['auto_pipeline_enabled']}")
+        print(f"Retry Failed Tasks: {self.SCHEDULER_CONFIG['retry_failed_tasks']}")
+        print(f"Max Task Retries: {self.SCHEDULER_CONFIG['max_task_retries']}")
         print("=" * 50)
 
 # Global configuration instance

@@ -4,7 +4,6 @@
 # Rsync
 ._*
 
-
 # backup foler
 backup/*
 
@@ -19,7 +18,7 @@ credentials/
 secrets/
 
 
-# Folder exclude
+# test and debug Folder exclude
 debug/*
 tests/*
 
@@ -38,6 +37,8 @@ pip-delete-this-directory.txt
 
 # Environment files
 .env
+.env.docker
+.env.scheduler
 .env.local
 .env.production
 .env.example

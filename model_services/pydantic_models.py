@@ -4,6 +4,11 @@ from pydantic import BaseModel, Field
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 
+class PredictionRequest(BaseModel):
+    text: str = Field(..., min_length=1, max_length=5000, description="Text to analyze")
+    model_name: Optional[str] = Field(default=None, description="Model to use (auto-select if None)")
+    return_confidence: bool = Field(default=True, description="Include confidence scores")
+
 class ModelPredictionRequest(BaseModel):
     text: str = Field(..., description="Text to analyze for sentiment")
     model_name: Optional[str] = Field(default="default", description="Model to use for prediction")
@@ -30,12 +35,11 @@ class BatchSentimentResponse(BaseModel):
 
 class HealthResponse(BaseModel):
     status: str
-    service_name: str
-    timestamp: datetime
-    manager_available: bool  # Changed from model_manager_available to avoid namespace conflict
-    memory_info: Optional[Dict[str, Any]] = None
-    uptime: Optional[str] = None
-    models_loaded: Optional[List[str]] = None
+    service: str
+    models_available: Dict[str, bool]
+    fallback_available: bool
+    timestamp: str
+    uptime_seconds: float
 
 class ModelInfo(BaseModel):
     name: str
@@ -45,9 +49,12 @@ class ModelInfo(BaseModel):
     last_used: Optional[datetime] = None
 
 class ModelsResponse(BaseModel):
-    available_models: List[ModelInfo]
-    current_model: Optional[str] = None
-    total_models: int
+    models: List[Dict[str, Any]]
+    total_available: int
+    fallback_available: bool
+    recommended: Optional[str]
+    timestamp: str
+
 
 class ErrorResponse(BaseModel):
     error: str
@@ -117,3 +124,12 @@ class MetricsResponse(BaseModel):
     process: ProcessMetrics
     models: ModelMetrics
     requests: RequestMetrics
+
+class PredictionResponse(BaseModel):
+    text: str
+    sentiment: str
+    confidence: Optional[float] = None
+    scores: Optional[Dict[str, float]] = None
+    model_used: str
+    processing_time_ms: float
+    timestamp: str

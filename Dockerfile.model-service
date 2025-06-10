@@ -1,58 +1,60 @@
 FROM python:3.11-slim
 
-LABEL maintainer="ohsono@gmail.com"
-LABEL description="Model Service API"
-LABEL version="1.0.0"
-
 WORKDIR /app
 
 # Set environment variables
 ENV PYTHONPATH=/app
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
+ENV MODEL_CACHE_DIR=/app/models
+ENV NLTK_DATA=/app/nltk_data
 
-# Install minimal system dependencies
+# Install system dependencies
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         gcc \
-        g++ && \
+        g++ \
+        curl \
+        wget && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-# Copy only the requirements first (for better caching)
-COPY requirements_model_service_minimal.txt .
-
-# Install Python dependencies
+# Copy requirements and install
+COPY requirements_model_service_distilbert.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements_model_service_minimal.txt
-RUN pip3 install --no-cache-dir -r requirements_model_service_minimal.txt
+    pip install --no-cache-dir -r requirements_model_service_distilbert.txt
+RUN pip3 install --no-cache-dir -r requirements_model_service_distilbert.txt
 
-# Create model cache directory
-RUN mkdir -p /app/models/nlk_data  /app/logs
 
-# Copy only the necessary application code
-COPY model_services/ ./model_services/
-COPY app/utils/ ./app/utils/
-COPY models/nltk_data ./app/models/nltk_data
-# Create non-root user
-RUN groupadd -r model_user && useradd -r -g model_user model_user && \
-    chown -R model_user:model_user /app
+# Create directories with proper permissions
+RUN mkdir -p /app/models /app/logs /app/nltk_data && \
+    chmod -R 755 /app/models /app/logs /app/nltk_data
 
-USER model_user
-
+# Download NLTK data as root first
 RUN python -c "import nltk; nltk.download('vader_lexicon', download_dir='/app/nltk_data', quiet=True)"
 
+# Copy application code
+COPY model_services/ ./model_services/
+COPY requirements*.txt ./
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=90s --retries=3 \
-    CMD curl -f http://localhost:8081/health || exit 1
+# Create entrypoint script
+RUN echo '#!/bin/bash\n\
+echo "🚀 Starting Model Service..."\n\
+echo "📁 Model cache dir: $MODEL_CACHE_DIR"\n\
+echo "🔍 Checking permissions..."\n\
+ls -la /app/models || echo "Creating models directory..."\n\
+mkdir -p /app/models /app/logs\n\
+echo "✅ Starting service on port 8081"\n\
+cd /app\n\
+exec python -m model_services.fixed_model_service --host 0.0.0.0 --port 8081' > /app/entrypoint.sh && \
+    chmod +x /app/entrypoint.sh
 
 # Expose port
 EXPOSE 8081
 
-# Create entrypoint script
-# RUN "./app/uvicorn model_services.lightweight_model_service:app --host 0.0.0.0 --port 8081"
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:8081/health || exit 1
 
-# Run the API with the correct entrypoint
-#CMD ["/app/entrypoint.sh"]
-CMD ["uvicorn", "model_services.lightweight_model_service:app", "--host", "0.0.0.0", "--port", "8081"]
+# Use entrypoint
+CMD ["/app/entrypoint.sh"]

@@ -1,0 +1,10 @@
+FROM postgres:15-alpine
+
+# Copy schema file into the container instead of mounting
+COPY database_schema.sql /docker-entrypoint-initdb.d/01-schema.sql
+
+# Set proper permissions
+RUN chmod 644 /docker-entrypoint-initdb.d/01-schema.sql
+
+# Run as postgres user
+USER postgres

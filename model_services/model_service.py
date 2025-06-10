@@ -19,19 +19,87 @@ except ImportError:
     from lightweight_model_manager import lightweight_model_manager
 
 # Import your pydantic models
-from pydantic_models import (
-    ModelPredictionRequest, 
-    ModelBatchRequest,
-    HealthResponse,
-    SentimentResponse,
-    BatchSentimentResponse,
-    ErrorResponse,
-    ModelsResponse,
-    ModelDownloadRequest,
-    ModelDownloadResponse,
-    ModelInfoResponse,
-    MetricsResponse
-)
+try:
+    from .pydantic_models import (
+        PredictionRequest,
+        PredictionResponse,
+        ModelBatchRequest,
+        HealthResponse,
+        SentimentResponse,
+        BatchSentimentResponse,
+        ErrorResponse,
+        ModelsResponse
+    )
+except ImportError:
+    from pydantic_models import (
+        PredictionRequest,
+        PredictionResponse,
+        ModelBatchRequest,
+        HealthResponse,
+        SentimentResponse,
+        BatchSentimentResponse,
+        ErrorResponse,
+        ModelsResponse
+    )
+
+
+
+try:
+    import torch
+    from transformers import AutoTokenizer, AutoModelForSequenceClassification, pipeline
+    TORCH_AVAILABLE = True
+    logger.info("✅ PyTorch and Transformers available")
+except ImportError as e:
+    logger.warning(f"❌ PyTorch/Transformers not available: {e}")
+
+try:
+    from huggingface_hub import snapshot_download
+    HF_AVAILABLE = True
+    logger.info("✅ HuggingFace Hub available")
+except ImportError as e:
+    logger.warning(f"❌ HuggingFace Hub not available: {e}")
+
+try:
+    import nltk
+    from nltk.sentiment import SentimentIntensityAnalyzer
+    
+    # Set NLTK data path
+    nltk_data_paths = [
+        './nltk_data',
+        '/app/nltk_data', 
+        os.path.expanduser('~/nltk_data'),
+        '/usr/local/share/nltk_data'
+    ]
+    
+    for path in nltk_data_paths:
+        if os.path.exists(path):
+            nltk.data.path.insert(0, path)
+            logger.info(f"📁 Added NLTK data path: {path}")
+    
+    # Try to find VADER lexicon
+    try:
+        nltk.data.find('vader_lexicon')
+        VADER_AVAILABLE = True
+        logger.info("✅ NLTK VADER lexicon found")
+    except LookupError:
+        # Try to download VADER lexicon
+        try:
+            for path in nltk_data_paths:
+                try:
+                    os.makedirs(path, exist_ok=True)
+                    nltk.download('vader_lexicon', download_dir=path, quiet=True)
+                    VADER_AVAILABLE = True
+                    logger.info(f"✅ NLTK VADER lexicon downloaded to {path}")
+                    break
+                except Exception as download_error:
+                    logger.debug(f"Failed to download to {path}: {download_error}")
+                    continue
+        except Exception as e:
+            logger.warning(f"Failed to download VADER lexicon: {e}")
+            
+except ImportError as e:
+    logger.warning(f"❌ NLTK not available: {e}")
+
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -161,7 +229,7 @@ async def health_check():
         raise HTTPException(status_code=500, detail=f"Health check failed: {str(e)}")
 
 @app.post("/predict", response_model=SentimentResponse)
-async def predict(request: ModelPredictionRequest):
+async def predict(request: PredictionRequest):
     """Single prediction endpoint using model manager with smart fallback"""
     try:
         # Use model manager for prediction with smart model selection

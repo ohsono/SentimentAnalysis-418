@@ -194,7 +194,7 @@ start_services() {
 stop_services() {
     echo -e "${BLUE}Stopping all services...${NC}"
     cleanup
-    docker-compose down
+    docker-compose down -v
     echo -e "${GREEN}All services stopped.${NC}"
 }
 
