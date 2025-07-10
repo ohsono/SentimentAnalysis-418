@@ -1,0 +1,403 @@
+name: Claude Code Integration
+
+on:
+  push:
+    branches:
+      - main
+      - staging
+      - dev
+      - test-*
+  pull_request:
+    branches:
+      - main
+      - staging
+      - dev
+  workflow_dispatch:
+    inputs:
+      task_type:
+        description: 'Type of Claude Code task to run'
+        required: true
+        default: 'code-review'
+        type: choice
+        options:
+          - code-review
+          - security-analysis
+          - code-optimization
+          - testing-suggestions
+          - documentation-review
+          - custom-prompt
+      custom_prompt:
+        description: 'Custom prompt (only used if task_type is custom-prompt)'
+        required: false
+        default: ''
+      target_files:
+        description: 'Target files/directories (optional, defaults to changed files)'
+        required: false
+        default: ''
+      max_tokens:
+        description: 'Maximum tokens to use (safety limit)'
+        required: false
+        default: '10000'
+        type: number
+
+permissions:
+  contents: read
+  pull-requests: write
+  actions: read
+
+env:
+  # Force Claude Sonnet 4 to avoid premium model usage
+  CLAUDE_MODEL: claude-sonnet-4-20250514
+  # Usage limits for safety
+  MAX_TOKENS_PER_RUN: 10000
+  MAX_FILES_PER_RUN: 50
+
+jobs:
+  claude-code-analysis:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        
+    - name: Validate API Key
+      run: |
+        if [ -n "${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}" ]; then
+          echo "✅ CLAUDE_CODE_OAUTH_TOKEN secret is configured (primary)"
+          echo "AUTH_METHOD=oauth" >> $GITHUB_ENV
+        elif [ -n "${{ secrets.ANTHROPIC_API_KEY }}" ]; then
+          echo "✅ ANTHROPIC_API_KEY secret is configured (fallback)"
+          echo "AUTH_METHOD=api_key" >> $GITHUB_ENV
+        else
+          echo "❌ Neither CLAUDE_CODE_OAUTH_TOKEN nor ANTHROPIC_API_KEY secrets are configured"
+          echo "Please add either:"
+          echo "  - CLAUDE_CODE_OAUTH_TOKEN (preferred) - OAuth token for Claude Code"
+          echo "  - ANTHROPIC_API_KEY (fallback) - Subscription-based Anthropic API key"
+          exit 1
+        fi
+        
+    - name: Install Claude Code CLI
+      run: |
+        echo "Installing Claude Code CLI..."
+        curl -fsSL https://claude.ai/install.sh | sh
+        echo "$HOME/.local/bin" >> $GITHUB_PATH
+        
+    - name: Verify Claude Code Installation
+      run: |
+        claude --version
+        echo "Model restriction: $CLAUDE_MODEL"
+        
+    - name: Determine Changed Files
+      if: github.event_name == 'pull_request'
+      id: changed-files
+      run: |
+        echo "Detecting changed files in PR..."
+        git diff --name-only ${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }} > changed_files.txt
+        
+        # Filter for code files only
+        grep -E '\.(py|js|ts|jsx|tsx|java|cpp|c|h|go|rs|rb|php|cs|swift|kt|scala|clj|ml|hs|r|sql|sh|yaml|yml|json|md|dockerfile)$' changed_files.txt > code_files.txt || true
+        
+        file_count=$(wc -l < code_files.txt)
+        echo "Found $file_count changed code files"
+        
+        if [ $file_count -gt $MAX_FILES_PER_RUN ]; then
+          echo "⚠️  Too many files changed ($file_count > $MAX_FILES_PER_RUN)"
+          echo "Limiting to first $MAX_FILES_PER_RUN files for safety"
+          head -n $MAX_FILES_PER_RUN code_files.txt > limited_files.txt
+          mv limited_files.txt code_files.txt
+        fi
+        
+        echo "files_count=$file_count" >> $GITHUB_OUTPUT
+        cat code_files.txt
+        
+    - name: Determine Target Files (Manual)
+      if: github.event_name == 'workflow_dispatch' && github.event.inputs.target_files != ''
+      run: |
+        echo "Using manually specified target files..."
+        echo "${{ github.event.inputs.target_files }}" | tr ',' '\n' > code_files.txt
+        
+    - name: Default to All Code Files (Push)
+      if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.target_files == '')
+      run: |
+        echo "Finding all code files in repository..."
+        find . -type f \( -name "*.py" -o -name "*.js" -o -name "*.ts" -o -name "*.jsx" -o -name "*.tsx" -o -name "*.java" -o -name "*.cpp" -o -name "*.c" -o -name "*.h" -o -name "*.go" -o -name "*.rs" -o -name "*.rb" -o -name "*.php" -o -name "*.cs" -o -name "*.swift" -o -name "*.kt" -o -name "*.scala" -o -name "*.clj" -o -name "*.ml" -o -name "*.hs" -o -name "*.r" -o -name "*.sql" -o -name "*.sh" -o -name "*.yaml" -o -name "*.yml" -o -name "*.json" -o -name "*.md" -o -name "Dockerfile*" \) \
+          -not -path "./.git/*" \
+          -not -path "./node_modules/*" \
+          -not -path "./.venv/*" \
+          -not -path "./venv/*" \
+          -not -path "./__pycache__/*" \
+          -not -path "./dist/*" \
+          -not -path "./build/*" \
+          | head -n $MAX_FILES_PER_RUN > code_files.txt
+        
+        file_count=$(wc -l < code_files.txt)
+        echo "Found $file_count code files (limited to $MAX_FILES_PER_RUN)"
+        
+    - name: Run Code Review Analysis
+      if: github.event.inputs.task_type == 'code-review' || github.event_name != 'workflow_dispatch'
+      env:
+        CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      run: |
+        echo "🔍 Running code review analysis with Claude Sonnet 4..."
+        
+        # Create analysis prompt
+        cat > analysis_prompt.txt << 'EOF'
+        Please perform a comprehensive code review of the provided files. Focus on:
+        
+        1. **Security Issues**: Identify potential vulnerabilities, insecure patterns, or data exposure risks
+        2. **Code Quality**: Review for maintainability, readability, and best practices
+        3. **Performance**: Highlight potential performance bottlenecks or inefficiencies
+        4. **Bug Detection**: Identify logical errors, edge cases, or potential runtime issues
+        5. **Architecture**: Comment on code structure, patterns, and design decisions
+        
+        For each issue found, provide:
+        - Severity level (Critical/High/Medium/Low)
+        - Specific file and line reference
+        - Clear explanation of the issue
+        - Recommended fix or improvement
+        
+        Be concise but thorough. Focus on actionable feedback.
+        EOF
+        
+        # Run Claude Code analysis
+        claude --model $CLAUDE_MODEL --max-tokens ${{ github.event.inputs.max_tokens || env.MAX_TOKENS_PER_RUN }} \
+          --files $(cat code_files.txt | tr '\n' ' ') \
+          --prompt-file analysis_prompt.txt \
+          --output-format markdown > analysis_result.md
+        
+        echo "✅ Code review analysis completed"
+        
+    - name: Run Security Analysis
+      if: github.event.inputs.task_type == 'security-analysis'
+      env:
+        CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      run: |
+        echo "🔒 Running security analysis with Claude Sonnet 4..."
+        
+        cat > security_prompt.txt << 'EOF'
+        Please perform a thorough security analysis of the provided code. Focus on:
+        
+        1. **Vulnerability Detection**: SQL injection, XSS, CSRF, authentication bypass, etc.
+        2. **Data Protection**: Sensitive data handling, encryption, secure storage
+        3. **Access Control**: Authorization, privilege escalation, insecure defaults
+        4. **Input Validation**: Unvalidated inputs, injection attacks, data sanitization
+        5. **Dependencies**: Known vulnerabilities in third-party libraries
+        6. **Configuration Security**: Hardcoded secrets, insecure configurations
+        
+        For each security issue:
+        - Provide OWASP category if applicable
+        - Rate severity (Critical/High/Medium/Low)
+        - Give specific remediation steps
+        - Include secure code examples where helpful
+        EOF
+        
+        claude --model $CLAUDE_MODEL --max-tokens ${{ github.event.inputs.max_tokens || env.MAX_TOKENS_PER_RUN }} \
+          --files $(cat code_files.txt | tr '\n' ' ') \
+          --prompt-file security_prompt.txt \
+          --output-format markdown > analysis_result.md
+        
+        echo "✅ Security analysis completed"
+        
+    - name: Run Code Optimization Analysis
+      if: github.event.inputs.task_type == 'code-optimization'
+      env:
+        CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      run: |
+        echo "⚡ Running code optimization analysis with Claude Sonnet 4..."
+        
+        cat > optimization_prompt.txt << 'EOF'
+        Please analyze the code for optimization opportunities. Focus on:
+        
+        1. **Performance**: Algorithmic complexity, inefficient loops, redundant operations
+        2. **Memory Usage**: Memory leaks, unnecessary allocations, caching opportunities
+        3. **Database**: Query optimization, N+1 problems, indexing suggestions
+        4. **Network**: API efficiency, request batching, caching strategies
+        5. **Code Structure**: Refactoring opportunities, design pattern improvements
+        6. **Resource Management**: File handling, connection pooling, cleanup
+        
+        For each optimization:
+        - Estimate performance impact
+        - Provide before/after code examples
+        - Explain the optimization technique
+        - Consider trade-offs and side effects
+        EOF
+        
+        claude --model $CLAUDE_MODEL --max-tokens ${{ github.event.inputs.max_tokens || env.MAX_TOKENS_PER_RUN }} \
+          --files $(cat code_files.txt | tr '\n' ' ') \
+          --prompt-file optimization_prompt.txt \
+          --output-format markdown > analysis_result.md
+        
+        echo "✅ Code optimization analysis completed"
+        
+    - name: Run Testing Suggestions
+      if: github.event.inputs.task_type == 'testing-suggestions'
+      env:
+        CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      run: |
+        echo "🧪 Running testing suggestions analysis with Claude Sonnet 4..."
+        
+        cat > testing_prompt.txt << 'EOF'
+        Please analyze the code and provide comprehensive testing recommendations:
+        
+        1. **Test Coverage**: Identify untested or poorly tested code paths
+        2. **Unit Tests**: Suggest specific unit tests for functions and methods
+        3. **Integration Tests**: Recommend integration test scenarios
+        4. **Edge Cases**: Highlight edge cases that need testing
+        5. **Mock Strategy**: Suggest what to mock and testing patterns
+        6. **Test Data**: Recommend test data structures and fixtures
+        
+        For each suggestion:
+        - Provide test case examples
+        - Explain the testing rationale
+        - Suggest appropriate testing frameworks
+        - Include test assertions and expected outcomes
+        EOF
+        
+        claude --model $CLAUDE_MODEL --max-tokens ${{ github.event.inputs.max_tokens || env.MAX_TOKENS_PER_RUN }} \
+          --files $(cat code_files.txt | tr '\n' ' ') \
+          --prompt-file testing_prompt.txt \
+          --output-format markdown > analysis_result.md
+        
+        echo "✅ Testing suggestions analysis completed"
+        
+    - name: Run Documentation Review
+      if: github.event.inputs.task_type == 'documentation-review'
+      env:
+        CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      run: |
+        echo "📝 Running documentation review with Claude Sonnet 4..."
+        
+        cat > documentation_prompt.txt << 'EOF'
+        Please review and improve the documentation in the provided code:
+        
+        1. **Code Comments**: Evaluate existing comments for clarity and completeness
+        2. **Function Documentation**: Check docstrings, parameter descriptions, return values
+        3. **API Documentation**: Review API endpoints, request/response formats
+        4. **README Files**: Assess setup instructions, usage examples, troubleshooting
+        5. **Architecture Documentation**: Review system design explanations
+        6. **Missing Documentation**: Identify areas that need documentation
+        
+        For each documentation issue:
+        - Provide improved documentation examples
+        - Suggest documentation standards to follow
+        - Highlight critical missing documentation
+        - Recommend documentation tools or formats
+        EOF
+        
+        claude --model $CLAUDE_MODEL --max-tokens ${{ github.event.inputs.max_tokens || env.MAX_TOKENS_PER_RUN }} \
+          --files $(cat code_files.txt | tr '\n' ' ') \
+          --prompt-file documentation_prompt.txt \
+          --output-format markdown > analysis_result.md
+        
+        echo "✅ Documentation review completed"
+        
+    - name: Run Custom Prompt Analysis
+      if: github.event.inputs.task_type == 'custom-prompt' && github.event.inputs.custom_prompt != ''
+      env:
+        CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      run: |
+        echo "🎯 Running custom prompt analysis with Claude Sonnet 4..."
+        
+        echo "${{ github.event.inputs.custom_prompt }}" > custom_prompt.txt
+        
+        claude --model $CLAUDE_MODEL --max-tokens ${{ github.event.inputs.max_tokens || env.MAX_TOKENS_PER_RUN }} \
+          --files $(cat code_files.txt | tr '\n' ' ') \
+          --prompt-file custom_prompt.txt \
+          --output-format markdown > analysis_result.md
+        
+        echo "✅ Custom prompt analysis completed"
+        
+    - name: Process Analysis Results
+      if: always()
+      run: |
+        if [ -f analysis_result.md ]; then
+          echo "📊 Analysis Results Summary:"
+          echo "=========================="
+          head -n 50 analysis_result.md
+          echo "=========================="
+          echo "Full results available in workflow artifacts"
+          
+          # Add workflow run info
+          cat >> analysis_result.md << EOF
+          
+          ---
+          
+          ## Analysis Metadata
+          
+          - **Model Used**: $CLAUDE_MODEL (Premium models excluded)
+          - **Workflow**: ${{ github.workflow }}
+          - **Run ID**: ${{ github.run_id }}
+          - **Trigger**: ${{ github.event_name }}
+          - **Repository**: ${{ github.repository }}
+          - **Branch**: ${{ github.ref_name }}
+          - **Commit**: ${{ github.sha }}
+          - **Files Analyzed**: $(wc -l < code_files.txt) files
+          - **Max Tokens Used**: ${{ github.event.inputs.max_tokens || env.MAX_TOKENS_PER_RUN }}
+          EOF
+          
+        else
+          echo "❌ No analysis results generated"
+          exit 1
+        fi
+        
+    - name: Upload Analysis Results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: claude-analysis-results-${{ github.run_id }}
+        path: |
+          analysis_result.md
+          code_files.txt
+        retention-days: 30
+        
+    - name: Comment on PR (if applicable)
+      if: github.event_name == 'pull_request' && success()
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const fs = require('fs');
+          
+          if (fs.existsSync('analysis_result.md')) {
+            const analysis = fs.readFileSync('analysis_result.md', 'utf8');
+            
+            // Truncate if too long for PR comment
+            const maxLength = 32000;
+            let comment = analysis;
+            if (comment.length > maxLength) {
+              comment = comment.substring(0, maxLength) + '\n\n... (truncated - see workflow artifacts for full results)';
+            }
+            
+            const header = `## 🤖 Claude Code Analysis Results\n\n> **Model Used**: \`${{ env.CLAUDE_MODEL }}\` (Premium models excluded)\n> **Analysis Type**: \`${{ github.event.inputs.task_type || 'code-review' }}\`\n\n`;
+            
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: header + comment
+            });
+          }
+          
+    - name: Usage Monitoring
+      if: always()
+      run: |
+        echo "📈 Usage Monitoring:"
+        echo "==================="
+        echo "Model: $CLAUDE_MODEL"
+        echo "Max Tokens: ${{ github.event.inputs.max_tokens || env.MAX_TOKENS_PER_RUN }}"
+        echo "Files Processed: $(wc -l < code_files.txt 2>/dev/null || echo 0)"
+        echo "Workflow Type: ${{ github.event.inputs.task_type || 'code-review' }}"
+        echo "Trigger: ${{ github.event_name }}"
+        echo "Repository: ${{ github.repository }}"
+        echo "Branch: ${{ github.ref_name }}"
+        echo "==================="
+        
+        # Log to help track usage patterns
+        echo "Usage logged for monitoring and cost tracking"
