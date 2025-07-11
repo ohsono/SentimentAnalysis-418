@@ -414,7 +414,7 @@ jobs:
         chmod +x analyze_code.sh
         
     - name: Run Code Review Analysis
-      if: steps.validate.outputs.task_type_validated == 'code-review' || github.event_name != 'workflow_dispatch'
+      if: github.event_name != 'workflow_dispatch' || steps.validate.outputs.task_type_validated == 'code-review'
       env:
         CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
         ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -441,7 +441,20 @@ jobs:
         Be concise but thorough. Focus on actionable feedback.
         EOF
         
+        # Debug: Check if files exist
+        echo "Debug: Checking prerequisites..."
+        echo "- code_files.txt exists: $([ -f code_files.txt ] && echo 'YES' || echo 'NO')"
+        echo "- analyze_code.sh exists: $([ -f analyze_code.sh ] && echo 'YES' || echo 'NO')"
+        echo "- analysis_prompt.txt exists: $([ -f analysis_prompt.txt ] && echo 'YES' || echo 'NO')"
+        
+        if [ -f code_files.txt ]; then
+          echo "- Files to analyze: $(wc -l < code_files.txt)"
+          echo "- File contents:"
+          cat code_files.txt
+        fi
+        
         # Run analysis using the secure function
+        echo "Running analysis..."
         ./analyze_code.sh analysis_prompt.txt analysis_result.md
         
         echo "✅ Code review analysis completed"
