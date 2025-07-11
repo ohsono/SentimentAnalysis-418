@@ -322,11 +322,11 @@ jobs:
         -not -path "./build/*" \
         -not -path "./.github/*" > all_files.txt
         
-        # Limit files and remove empty lines
-        head -n "$MAX_FILES_PER_RUN" all_files.txt | grep -v '^$' > code_files.txt || touch code_files.txt
+        # Limit files and remove empty lines (reduce to 10 files to avoid argument length issues)
+        head -n 10 all_files.txt | grep -v '^$' > code_files.txt || touch code_files.txt
         
         file_count=$(wc -l < code_files.txt)
-        echo "Found $file_count code files (limited to $MAX_FILES_PER_RUN)"
+        echo "Found $file_count code files (limited to 10 to avoid argument length issues)"
         
         if [ "$file_count" -eq 0 ]; then
           echo "❌ No code files found in repository"
@@ -394,7 +394,9 @@ jobs:
         
         # Run Claude analysis
         echo "Running Claude analysis on $file_count files..."
+        echo "Prompt size: $(wc -c < combined_prompt.txt) characters"
         
+        # Run Claude analysis (with limited files to avoid argument length issues)
         claude --model "$CLAUDE_MODEL" -p "$(cat combined_prompt.txt)" > "$OUTPUT_FILE" 2>&1 || {
           echo "❌ Claude analysis failed"
           echo "Troubleshooting:"
