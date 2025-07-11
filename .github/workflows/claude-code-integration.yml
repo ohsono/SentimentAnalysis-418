@@ -404,22 +404,20 @@ jobs:
           echo "Full results available in workflow artifacts"
           
           # Add workflow run info
-          cat >> analysis_result.md << 'EOF'
-          
-          ---
-          
-          ## Analysis Metadata
-          
-          - **Model Used**: $CLAUDE_MODEL (Premium models excluded)
-          - **Workflow**: ${{ github.workflow }}
-          - **Run ID**: ${{ github.run_id }}
-          - **Trigger**: ${{ github.event_name }}
-          - **Repository**: ${{ github.repository }}
-          - **Branch**: ${{ github.ref_name }}
-          - **Commit**: ${{ github.sha }}
-          - **Files Analyzed**: $(wc -l < code_files.txt) files
-          - **Max Tokens Used**: ${{ github.event.inputs.max_tokens || env.MAX_TOKENS_PER_RUN }}
-          EOF
+          echo "" >> analysis_result.md
+          echo "---" >> analysis_result.md
+          echo "" >> analysis_result.md
+          echo "## Analysis Metadata" >> analysis_result.md
+          echo "" >> analysis_result.md
+          echo "- **Model Used**: $CLAUDE_MODEL (Premium models excluded)" >> analysis_result.md
+          echo "- **Workflow**: ${{ github.workflow }}" >> analysis_result.md
+          echo "- **Run ID**: ${{ github.run_id }}" >> analysis_result.md
+          echo "- **Trigger**: ${{ github.event_name }}" >> analysis_result.md
+          echo "- **Repository**: ${{ github.repository }}" >> analysis_result.md
+          echo "- **Branch**: ${{ github.ref_name }}" >> analysis_result.md
+          echo "- **Commit**: ${{ github.sha }}" >> analysis_result.md
+          echo "- **Files Analyzed**: $(wc -l < code_files.txt) files" >> analysis_result.md
+          echo "- **Max Tokens Used**: ${{ github.event.inputs.max_tokens || env.MAX_TOKENS_PER_RUN }}" >> analysis_result.md
           
         else
           echo "❌ No analysis results generated"
