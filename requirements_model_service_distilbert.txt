@@ -11,7 +11,7 @@ pydantic==2.7.0
 
 # Machine Learning and NLP
 torch>=2.0.0,<2.8.0
-transformers==4.50.0
+transformers==4.52.1
 tokenizers==0.21.0
 huggingface-hub==0.32.0
 safetensors==0.5.0
@@ -36,12 +36,12 @@ click==8.1.7
 
 # Text processing
 scipy>=1.15.0
-scikit-learn==1.5.1
+scikit-learn==1.6.1
 
 # Development and testing (optional)
 pytest==7.4.3
 pytest-asyncio==0.21.1
-black==24.3.0
+black==25.1.0
 flake8==6.1.0
 
 aiofiles==23.2.1
