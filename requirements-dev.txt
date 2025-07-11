@@ -6,7 +6,7 @@ pytest-cov==4.1.0
 httpx==0.25.2
 
 # Development tools
-black==24.3.0
+black==25.1.0
 flake8==6.1.0
 mypy==1.7.1
 pre-commit==3.6.0
