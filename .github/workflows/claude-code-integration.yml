@@ -81,8 +81,8 @@ jobs:
     - name: Install Claude Code CLI
       run: |
         echo "Installing Claude Code CLI..."
-        curl -fsSL https://claude.ai/install.sh | sh
-        echo "$HOME/.local/bin" >> $GITHUB_PATH
+        npm install -g @anthropic-ai/claude-code
+        echo "Installation completed"
         
     - name: Verify Claude Code Installation
       run: |
@@ -163,10 +163,23 @@ jobs:
         EOF
         
         # Run Claude Code analysis
-        claude --model $CLAUDE_MODEL --max-tokens ${{ github.event.inputs.max_tokens || env.MAX_TOKENS_PER_RUN }} \
-          --files $(cat code_files.txt | tr '\n' ' ') \
-          --prompt-file analysis_prompt.txt \
-          --output-format markdown > analysis_result.md
+        # Create a combined prompt with files and analysis request
+        echo "# Files to analyze:" > combined_prompt.txt
+        while read -r file; do
+          if [ -f "$file" ]; then
+            echo "## $file" >> combined_prompt.txt
+            echo "\`\`\`" >> combined_prompt.txt
+            cat "$file" >> combined_prompt.txt
+            echo "\`\`\`" >> combined_prompt.txt
+            echo "" >> combined_prompt.txt
+          fi
+        done < code_files.txt
+        
+        echo "# Analysis Request:" >> combined_prompt.txt
+        cat analysis_prompt.txt >> combined_prompt.txt
+        
+        # Run Claude with the combined prompt
+        claude --model $CLAUDE_MODEL -p "$(cat combined_prompt.txt)" > analysis_result.md
         
         echo "✅ Code review analysis completed"
         
@@ -195,10 +208,23 @@ jobs:
         - Include secure code examples where helpful
         EOF
         
-        claude --model $CLAUDE_MODEL --max-tokens ${{ github.event.inputs.max_tokens || env.MAX_TOKENS_PER_RUN }} \
-          --files $(cat code_files.txt | tr '\n' ' ') \
-          --prompt-file security_prompt.txt \
-          --output-format markdown > analysis_result.md
+        # Create a combined prompt with files and analysis request
+        echo "# Files to analyze:" > combined_prompt.txt
+        while read -r file; do
+          if [ -f "$file" ]; then
+            echo "## $file" >> combined_prompt.txt
+            echo "\`\`\`" >> combined_prompt.txt
+            cat "$file" >> combined_prompt.txt
+            echo "\`\`\`" >> combined_prompt.txt
+            echo "" >> combined_prompt.txt
+          fi
+        done < code_files.txt
+        
+        echo "# Analysis Request:" >> combined_prompt.txt
+        cat security_prompt.txt >> combined_prompt.txt
+        
+        # Run Claude with the combined prompt
+        claude --model $CLAUDE_MODEL -p "$(cat combined_prompt.txt)" > analysis_result.md
         
         echo "✅ Security analysis completed"
         
@@ -227,10 +253,23 @@ jobs:
         - Consider trade-offs and side effects
         EOF
         
-        claude --model $CLAUDE_MODEL --max-tokens ${{ github.event.inputs.max_tokens || env.MAX_TOKENS_PER_RUN }} \
-          --files $(cat code_files.txt | tr '\n' ' ') \
-          --prompt-file optimization_prompt.txt \
-          --output-format markdown > analysis_result.md
+        # Create a combined prompt with files and analysis request
+        echo "# Files to analyze:" > combined_prompt.txt
+        while read -r file; do
+          if [ -f "$file" ]; then
+            echo "## $file" >> combined_prompt.txt
+            echo "\`\`\`" >> combined_prompt.txt
+            cat "$file" >> combined_prompt.txt
+            echo "\`\`\`" >> combined_prompt.txt
+            echo "" >> combined_prompt.txt
+          fi
+        done < code_files.txt
+        
+        echo "# Analysis Request:" >> combined_prompt.txt
+        cat optimization_prompt.txt >> combined_prompt.txt
+        
+        # Run Claude with the combined prompt
+        claude --model $CLAUDE_MODEL -p "$(cat combined_prompt.txt)" > analysis_result.md
         
         echo "✅ Code optimization analysis completed"
         
@@ -259,10 +298,23 @@ jobs:
         - Include test assertions and expected outcomes
         EOF
         
-        claude --model $CLAUDE_MODEL --max-tokens ${{ github.event.inputs.max_tokens || env.MAX_TOKENS_PER_RUN }} \
-          --files $(cat code_files.txt | tr '\n' ' ') \
-          --prompt-file testing_prompt.txt \
-          --output-format markdown > analysis_result.md
+        # Create a combined prompt with files and analysis request
+        echo "# Files to analyze:" > combined_prompt.txt
+        while read -r file; do
+          if [ -f "$file" ]; then
+            echo "## $file" >> combined_prompt.txt
+            echo "\`\`\`" >> combined_prompt.txt
+            cat "$file" >> combined_prompt.txt
+            echo "\`\`\`" >> combined_prompt.txt
+            echo "" >> combined_prompt.txt
+          fi
+        done < code_files.txt
+        
+        echo "# Analysis Request:" >> combined_prompt.txt
+        cat testing_prompt.txt >> combined_prompt.txt
+        
+        # Run Claude with the combined prompt
+        claude --model $CLAUDE_MODEL -p "$(cat combined_prompt.txt)" > analysis_result.md
         
         echo "✅ Testing suggestions analysis completed"
         
@@ -291,10 +343,23 @@ jobs:
         - Recommend documentation tools or formats
         EOF
         
-        claude --model $CLAUDE_MODEL --max-tokens ${{ github.event.inputs.max_tokens || env.MAX_TOKENS_PER_RUN }} \
-          --files $(cat code_files.txt | tr '\n' ' ') \
-          --prompt-file documentation_prompt.txt \
-          --output-format markdown > analysis_result.md
+        # Create a combined prompt with files and analysis request
+        echo "# Files to analyze:" > combined_prompt.txt
+        while read -r file; do
+          if [ -f "$file" ]; then
+            echo "## $file" >> combined_prompt.txt
+            echo "\`\`\`" >> combined_prompt.txt
+            cat "$file" >> combined_prompt.txt
+            echo "\`\`\`" >> combined_prompt.txt
+            echo "" >> combined_prompt.txt
+          fi
+        done < code_files.txt
+        
+        echo "# Analysis Request:" >> combined_prompt.txt
+        cat documentation_prompt.txt >> combined_prompt.txt
+        
+        # Run Claude with the combined prompt
+        claude --model $CLAUDE_MODEL -p "$(cat combined_prompt.txt)" > analysis_result.md
         
         echo "✅ Documentation review completed"
         
@@ -308,10 +373,23 @@ jobs:
         
         echo "${{ github.event.inputs.custom_prompt }}" > custom_prompt.txt
         
-        claude --model $CLAUDE_MODEL --max-tokens ${{ github.event.inputs.max_tokens || env.MAX_TOKENS_PER_RUN }} \
-          --files $(cat code_files.txt | tr '\n' ' ') \
-          --prompt-file custom_prompt.txt \
-          --output-format markdown > analysis_result.md
+        # Create a combined prompt with files and analysis request
+        echo "# Files to analyze:" > combined_prompt.txt
+        while read -r file; do
+          if [ -f "$file" ]; then
+            echo "## $file" >> combined_prompt.txt
+            echo "\`\`\`" >> combined_prompt.txt
+            cat "$file" >> combined_prompt.txt
+            echo "\`\`\`" >> combined_prompt.txt
+            echo "" >> combined_prompt.txt
+          fi
+        done < code_files.txt
+        
+        echo "# Analysis Request:" >> combined_prompt.txt
+        cat custom_prompt.txt >> combined_prompt.txt
+        
+        # Run Claude with the combined prompt
+        claude --model $CLAUDE_MODEL -p "$(cat combined_prompt.txt)" > analysis_result.md
         
         echo "✅ Custom prompt analysis completed"
         
