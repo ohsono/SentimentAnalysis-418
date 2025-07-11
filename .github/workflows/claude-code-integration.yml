@@ -404,7 +404,7 @@ jobs:
           echo "Full results available in workflow artifacts"
           
           # Add workflow run info
-          cat >> analysis_result.md << EOF
+          cat >> analysis_result.md << 'EOF'
           
           ---
           
