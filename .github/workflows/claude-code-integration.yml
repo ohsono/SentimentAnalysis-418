@@ -304,6 +304,7 @@ jobs:
         echo "Finding all code files in repository..."
         
         # Safely find code files with controlled patterns
+        # Use a simpler approach to avoid complex piping issues
         find . -type f \( \
           -name "*.py" -o -name "*.js" -o -name "*.ts" -o -name "*.jsx" -o -name "*.tsx" -o \
           -name "*.java" -o -name "*.cpp" -o -name "*.c" -o -name "*.h" -o -name "*.go" -o \
@@ -319,8 +320,10 @@ jobs:
         -not -path "./__pycache__/*" \
         -not -path "./dist/*" \
         -not -path "./build/*" \
-        -not -path "./.github/*" \
-        -print0 | head -z -n "$MAX_FILES_PER_RUN" | tr '\0' '\n' | grep -v '^$' > code_files.txt
+        -not -path "./.github/*" > all_files.txt
+        
+        # Limit files and remove empty lines
+        head -n "$MAX_FILES_PER_RUN" all_files.txt | grep -v '^$' > code_files.txt || touch code_files.txt
         
         file_count=$(wc -l < code_files.txt)
         echo "Found $file_count code files (limited to $MAX_FILES_PER_RUN)"
