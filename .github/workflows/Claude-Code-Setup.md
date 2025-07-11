@@ -5,10 +5,13 @@ This guide helps you set up the Claude Code GitHub Actions workflow with model r
 ## 🎯 Key Features
 
 - **Model Restriction**: Forces `claude-sonnet-4-20250514` (excludes premium Claude Opus 4)
-- **Usage Safeguards**: Token limits and file count restrictions
+- **Security Hardened**: Input validation, command injection prevention, file sanitization
+- **Token Validation**: OAuth token format validation with fallback authentication
+- **Usage Safeguards**: Token limits (10k), file count limits (50), timeout protection
 - **Multiple Triggers**: PRs, pushes, and manual dispatch
 - **Comprehensive Analysis**: Code review, security, optimization, testing, documentation
 - **Automatic PR Comments**: Results posted directly to pull requests
+- **Error Handling**: Actionable error messages with troubleshooting guidance
 
 ## 📋 Setup Requirements
 
@@ -19,14 +22,18 @@ Add authentication secrets to GitHub repository (Settings → Secrets and variab
 **Option 1: Claude Code OAuth Token (Recommended)**
 1. Click **New repository secret**
 2. Name: `CLAUDE_CODE_OAUTH_TOKEN`
-3. Value: Your Claude Code OAuth token
+3. Value: Your Claude Code OAuth token (format: `sk-ant-[alphanumeric]`)
 
 **Option 2: Anthropic API Key (Fallback)**
 1. Click **New repository secret**
 2. Name: `ANTHROPIC_API_KEY`
-3. Value: Your subscription-based Anthropic API key
+3. Value: Your subscription-based Anthropic API key (format: `sk-ant-[alphanumeric]`)
 
-**Note**: The workflow will use `CLAUDE_CODE_OAUTH_TOKEN` if available, otherwise fall back to `ANTHROPIC_API_KEY`.
+**Security Features:**
+- **Token Format Validation**: Both tokens are validated for proper format
+- **Fallback Authentication**: Automatically uses API key if OAuth token is unavailable
+- **Clear Error Messages**: Detailed setup instructions provided on authentication failure
+- **Get your token from**: https://console.anthropic.com/
 
 ### 2. Verify Workflow File
 
@@ -102,6 +109,8 @@ Ensure `.github/workflows/claude-code-integration.yml` exists in your repository
 |-------|-------|---------|
 | Max tokens per run | 10,000 | Cost control |
 | Max files per run | 50 | Performance |
+| File size per file | 10KB | Prevent huge prompts |
+| Analysis timeout | 300 seconds | Prevent hanging |
 | Model restriction | `claude-sonnet-4-20250514` | Exclude premium models |
 
 ## 📊 Analysis Types
@@ -141,22 +150,37 @@ Ensure `.github/workflows/claude-code-integration.yml` exists in your repository
 - Architecture documentation
 - Missing documentation
 
-## 🔒 Security Best Practices
+## 🔒 Security Features
 
-1. **API Key Management**
-   - Use GitHub secrets (never commit keys)
-   - Use subscription-based keys only
-   - Rotate keys regularly
+### Input Validation & Sanitization
+- **Command Injection Prevention**: All user inputs are validated and sanitized
+- **File Path Sanitization**: File paths are validated against safe patterns
+- **SHA Validation**: Git SHAs are validated for proper format
+- **Token Format Validation**: Authentication tokens are validated for proper format
 
-2. **Model Restrictions**
-   - Workflow enforces `claude-sonnet-4-20250514`
-   - Premium models (Opus 4) are excluded
-   - Usage monitoring tracks model usage
+### File Security
+- **File Existence Checks**: All files are verified to exist before processing
+- **Path Traversal Prevention**: Directory traversal attempts are blocked
+- **File Size Limits**: Individual files limited to 10KB to prevent huge prompts
+- **Safe File Patterns**: Only files matching safe patterns are processed
 
-3. **Access Control**
-   - Workflow requires `contents: read` permission
-   - PR comments require `pull-requests: write`
-   - No write access to repository code
+### Runtime Security
+- **Timeout Protection**: Analysis operations timeout after 5 minutes
+- **Error Handling**: Comprehensive error handling with actionable messages
+- **Output Sanitization**: PR comments are sanitized to prevent injection
+- **Strict Mode**: All bash scripts run with `set -euo pipefail`
+
+### Authentication Security
+- **Dual Authentication**: Primary OAuth token with API key fallback
+- **Token Validation**: Format validation for both token types
+- **Secure Storage**: All tokens stored in GitHub secrets
+- **Clear Error Messages**: Detailed setup instructions on authentication failure
+
+### Usage Controls
+- **Model Restriction**: Forces `claude-sonnet-4-20250514` (excludes premium models)
+- **Token Limits**: Maximum 10,000 tokens per run for cost control
+- **File Limits**: Maximum 50 files per run for performance
+- **Usage Monitoring**: All usage is logged for monitoring and cost tracking
 
 ## 📈 Usage Monitoring
 
