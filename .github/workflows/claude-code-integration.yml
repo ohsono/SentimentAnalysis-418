@@ -392,16 +392,18 @@ jobs:
         echo "" >> combined_prompt.txt
         cat "$PROMPT_FILE" >> combined_prompt.txt
         
-        # Run Claude analysis with timeout
+        # Run Claude analysis
         echo "Running Claude analysis on $file_count files..."
         
-        timeout 300 claude --model "$CLAUDE_MODEL" -p "$(cat combined_prompt.txt)" > "$OUTPUT_FILE" 2>&1 || {
-          echo "❌ Claude analysis failed or timed out"
+        claude --model "$CLAUDE_MODEL" -p "$(cat combined_prompt.txt)" > "$OUTPUT_FILE" 2>&1 || {
+          echo "❌ Claude analysis failed"
           echo "Troubleshooting:"
           echo "1. Check authentication: claude --version"
           echo "2. Check model availability: $CLAUDE_MODEL"
           echo "3. Check prompt size: wc -c combined_prompt.txt"
           echo "4. Check network connectivity"
+          echo "5. Check error output:"
+          [ -f "$OUTPUT_FILE" ] && cat "$OUTPUT_FILE"
           exit 1
         }
         
